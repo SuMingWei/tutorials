@@ -335,7 +335,7 @@ def main(p4info_file_path, bmv2_file_path):
         writeHostForwardRules(p4info_helper, ingress_sw=s7,      
                             dst_eth_addr="08:00:00:00:11:01",port=2,dst_ip_addr="11.0.1.1")
         writeHostForwardRules(p4info_helper, ingress_sw=s8,      
-                            dst_eth_addr="08:00:00:00:11:21",port=2,dst_ip_addr="11.0.2.1")
+                            dst_eth_addr="08:00:00:00:11:02",port=2,dst_ip_addr="11.0.2.1")
         writeHostForwardRules(p4info_helper, ingress_sw=s9,      
                             dst_eth_addr="08:00:00:00:11:10",port=2,dst_ip_addr="11.1.0.1")
         writeHostForwardRules(p4info_helper, ingress_sw=s10,     
@@ -349,7 +349,7 @@ def main(p4info_file_path, bmv2_file_path):
         writeHostForwardRules(p4info_helper, ingress_sw=s14,     
                             dst_eth_addr="08:00:00:00:11:22",port=2,dst_ip_addr="11.2.2.1")
         writeHostForwardRules(p4info_helper, ingress_sw=s15,
-                            dst_eth_addr="08:00:00:00:11:03",port=3,dst_ip_addr="11.0.3.1")
+                            dst_eth_addr="08:00:00:00:11:03",port=2,dst_ip_addr="11.0.3.1")
         # from host to host
         # s1
         writeTunnelForwardRules(p4info_helper,ingress_sw=s1,port=2,dst_ip_addr="11.0.0.0",prefix=8)
@@ -410,13 +410,13 @@ def main(p4info_file_path, bmv2_file_path):
         # readTableRules(p4info_helper, s2)
 
         # Print the tunnel counters every 2 seconds
-        while True:
-            sleep(2)
-            print '\n----- Reading tunnel counters -----'
-            printCounter(p4info_helper, s1, "MyIngress.ingressTunnelCounter", 100)
-            printCounter(p4info_helper, s2, "MyIngress.egressTunnelCounter", 100)
-            printCounter(p4info_helper, s2, "MyIngress.ingressTunnelCounter", 200)
-            printCounter(p4info_helper, s1, "MyIngress.egressTunnelCounter", 200)
+        # while True:
+        #     sleep(2)
+        #     print '\n----- Reading tunnel counters -----'
+        #     printCounter(p4info_helper, s1, "MyIngress.ingressTunnelCounter", 100)
+        #     printCounter(p4info_helper, s2, "MyIngress.egressTunnelCounter", 100)
+        #     printCounter(p4info_helper, s2, "MyIngress.ingressTunnelCounter", 200)
+        #     printCounter(p4info_helper, s1, "MyIngress.egressTunnelCounter", 200)
 
     except KeyboardInterrupt:
         print " Shutting down."
