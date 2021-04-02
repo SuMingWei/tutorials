@@ -41,7 +41,9 @@ header ethernet_t {
 header ipv4_t {
     bit<4>    version;
     bit<4>    ihl;
-    bit<8>    tos;
+    // bit<8>    tos;
+    bit<6>    diffserv;
+    bit<2>    ecn;
     bit<16>   totalLen;
     bit<16>   identification;
     bit<3>    flags;
@@ -117,7 +119,15 @@ control MyIngress(inout headers hdr,
         hdr.ipv4.ttl = hdr.ipv4.ttl - 1;
     }
 
-/* TODO: Implement actions for different traffic classes */
+    /* TODO: Implement actions for different traffic classes */
+    /* bit<6> diffserv : 0~63  */
+    action tcp_forwarding(){
+        hdr.ipv4.diffserv = 60;
+    }
+
+    action udp_forwarding(){
+        hdr.ipv4.diffserv = 50;
+    }
 
 
     table ipv4_lpm {
@@ -133,9 +143,14 @@ control MyIngress(inout headers hdr,
         default_action = NoAction();
     }
 
-/* TODO: set hdr.ipv4.diffserv on the basis of protocol */
+    /* TODO: set hdr.ipv4.diffserv on the basis of protocol */
     apply {
         if (hdr.ipv4.isValid()) {
+            if(hdr.ipv4.protocol == IP_PROTOCOLS_UDP){
+                udp_forwarding();
+            }else if(hdr.ipv4.protocol == IP_PROTOCOLS_TCP){
+                tcp_forwarding();
+            }
             ipv4_lpm.apply();
         }
     }
@@ -163,7 +178,9 @@ control MyComputeChecksum(inout headers hdr, inout metadata meta) {
 	    hdr.ipv4.isValid(),
             { hdr.ipv4.version,
               hdr.ipv4.ihl,
-              hdr.ipv4.tos,
+              //hdr.ipv4.tos,
+              hdr.ipv4.diffserv,
+              hdr.ipv4.ecn,
               hdr.ipv4.totalLen,
               hdr.ipv4.identification,
               hdr.ipv4.flags,
