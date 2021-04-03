@@ -1,8 +1,8 @@
 {
     "hosts":{
         "h1":{"ip":"10.0.1.1", "mac": "08:00:00:00:10:01",
-            "commands":["route add default gw 10.0.1.1 dev eth0",
-                        "arp -i eth0 -s 10.0.1.1 08:00:00:00:10:01"]},
+            "commands":["route add default gw 10.0.1.10 dev eth0",
+                        "arp -i eth0 -s 10.0.1.10 08:00:00:00:10:00"]},
         "h2":{"ip":"11.0.0.1", "mac": "08:00:00:00:11:00",
             "commands":["route add default gw 11.0.0.1 dev eth0",
                         "arp -i eth0 -s 11.0.0.1 08:00:00:00:11:00"]},
