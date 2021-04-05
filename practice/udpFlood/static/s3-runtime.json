@@ -23,29 +23,7 @@
       {
         "table": "MyIngress.ipv4_lpm",
         "match": {
-          "hdr.ipv4.dstAddr": ["11.4.0.1", 16]
-        },
-        "action_name": "MyIngress.ipv4_forward",
-        "action_params": {
-          "dstAddr": "08:00:02:00:00:00",
-          "port": 2
-        }
-      },
-      {
-        "table": "MyIngress.ipv4_lpm",
-        "match": {
-          "hdr.ipv4.dstAddr": ["11.5.0.1", 16]
-        },
-        "action_name": "MyIngress.ipv4_forward",
-        "action_params": {
-          "dstAddr": "08:00:02:00:00:00",
-          "port": 2
-        }
-      },
-      {
-        "table": "MyIngress.ipv4_lpm",
-        "match": {
-          "hdr.ipv4.dstAddr": ["11.3.15.1", 24]
+          "hdr.ipv4.dstAddr": ["11.3.15.0", 24]
         },
         "action_name": "MyIngress.ipv4_forward",
         "action_params": {
@@ -56,7 +34,7 @@
       {
         "table": "MyIngress.ipv4_lpm",
         "match": {
-          "hdr.ipv4.dstAddr": ["11.3.6.1", 24]
+          "hdr.ipv4.dstAddr": ["11.3.6.0", 24]
         },
         "action_name": "MyIngress.ipv4_forward",
         "action_params": {
@@ -67,7 +45,7 @@
       {
         "table": "MyIngress.ipv4_lpm",
         "match": {
-          "hdr.ipv4.dstAddr": ["11.3.7.1", 24]
+          "hdr.ipv4.dstAddr": ["11.3.7.0", 24]
         },
         "action_name": "MyIngress.ipv4_forward",
         "action_params": {
@@ -78,12 +56,23 @@
       {
         "table": "MyIngress.ipv4_lpm",
         "match": {
-          "hdr.ipv4.dstAddr": ["11.3.8.1", 24]
+          "hdr.ipv4.dstAddr": ["11.3.8.0", 24]
         },
         "action_name": "MyIngress.ipv4_forward",
         "action_params": {
           "dstAddr": "08:00:02:03:08:00",
           "port": 8
+        }
+      },
+      {
+        "table": "MyIngress.ipv4_lpm",
+        "match": {
+          "hdr.ipv4.dstAddr": ["11.0.0.0", 8]
+        },
+        "action_name": "MyIngress.ipv4_forward",
+        "action_params": {
+          "dstAddr": "08:00:02:00:00:00",
+          "port": 2
         }
       }
     ]

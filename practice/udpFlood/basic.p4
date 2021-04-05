@@ -2,9 +2,9 @@
 #include <core.p4>
 #include <v1model.p4>
 // const
-#include "../include/const.p4"
+#include "./include/const.p4"
 // headers
-#include "../include/headers.p4"
+#include "./include/headers.p4"
 
 struct metadata {
     /* empty */

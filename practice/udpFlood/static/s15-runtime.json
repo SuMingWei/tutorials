@@ -28,18 +28,7 @@
         "action_name": "MyIngress.ipv4_forward",
         "action_params": {
           "dstAddr": "08:00:02:03:15:01",
-          "port": 11
-        }
-      },
-      {
-        "table": "MyIngress.ipv4_lpm",
-        "match": {
-          "hdr.ipv4.dstAddr": ["11.3.15.1", 32]
-        },
-        "action_name": "MyIngress.ipv4_forward",
-        "action_params": {
-          "dstAddr": "08:00:02:03:15:01",
-          "port": 11
+          "port": 1
         }
       }
     ]
