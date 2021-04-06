@@ -3,7 +3,6 @@
 ## Description
 
 
-
 ## Environment
 
 If you are not have P4 tutorial Virtual Environment:Please Ref. to [p4lang tutorial repo](https://github.com/p4lang/tutorials) 
@@ -80,3 +79,10 @@ h8(s2-s5-s12-)     |  `11.5.12.1`     |    `08:00:02:05:12:01`
 h9(s2-s5-s13-)     |  `11.5.13.1`     |    `08:00:02:05:13:01` 
 h10(s2-s5-s14-)    |  `11.5.14.1`     |    `08:00:02:05:14:01` 
 h11(s2-s3-s15-)    |  `11.3.15.1`     |    `08:00:02:03:15:01` 
+
+## Experience Assumption
+
+1. 假設UDP Flood的攻擊來自網路拓樸中Server所允許的ip address，意即某些正常的host成為駭客的殭屍網路，因此防火牆無法辨別哪些白名單內的IP address是已經被駭客控制的。
+2. 
+
+## Attack Scenario
