@@ -132,7 +132,6 @@ class SwitchConnection(object):
             for response in self.client_stub.Read(request):
                 yield response
 
-
     def WritePREEntry(self, pre_entry, dry_run=False):
         request = p4runtime_pb2.WriteRequest()
         request.device_id = self.device_id
@@ -144,6 +143,39 @@ class SwitchConnection(object):
             print "P4Runtime Write:", request
         else:
             self.client_stub.Write(request)
+
+    # Digest 
+    def WriteDigestEntry(self, digest_entry, dry_run=False):
+        request = p4runtime_pb2.WriteRequest()
+        request.device_id = self.device_id 
+        request.election_id.low = 1
+        update = request.updates.add()
+        update.type = p4runtime_pb2.Update.INSERT
+        update.entity.digest_entry.CopyFrom(digest_entry)
+
+        if dry_run: 
+            print "P4Runtime write DigestEntry: ", request 
+        else: 
+            self.client_stub.Write(request)
+
+    def DigestListAck(self, digest_ack, dry_run=False, **kwargs):
+        request = p4runtime_pb2.StreamMessageRequest()
+        request.digest_ack.CopyFrom(digest_ack)
+        if dry_run: 
+            print "P4 Runtime DigestListAck: ", request 
+        else:
+            self.requests_stream.put(request)
+            for item in self.stream_msg_resp:
+                return item 
+
+    def DigestList(self, dry_run=False, **kwargs):
+        request = p4runtime_pb2.StreamMessageRequest()
+        if dry_run:
+            print "P4 Runtime DigestList Response: ", request 
+        else: 
+            self.requests_stream.put(request)
+            for item in self.stream_msg_resp:
+                return item 
 
 class GrpcRequestLogger(grpc.UnaryUnaryClientInterceptor,
                         grpc.UnaryStreamClientInterceptor):
