@@ -54,6 +54,15 @@ header tcp_t{
     bit<16> urgentPtr;
 }
 
+struct syn_ack_digest{
+    bit<32> IP;
+}
+
+struct check_digest{
+    bit<32> dst_IP;
+    bit<32> index;
+}
+
 struct metadata {
     /* empty */
 }
@@ -147,8 +156,48 @@ control BasicIngress(inout headers hdr,
         default_action = NoAction();
     }
 
+    // test degist
+    bit<32> apply_index = 0;
+    action new_synack(){
+        digest<syn_ack_digest>((bit<32>)1024,{
+            hdr.ipv4.dstAddr
+        });
+    }
+
+    action checking(){
+        digest<check_digest>((bit<32>)1024,{
+            hdr.ipv4.dstAddr,
+            apply_index
+        });
+    }
+
+    table synack_entry {
+        key = {
+            hdr.ipv4.dstAddr: lpm;
+        }
+        actions = {
+            new_synack;
+            checking;
+        }
+        size = 1024;
+        default_action = new_synack();
+    }
+
+    // apply {
+    //     if (hdr.ipv4.isValid()) {
+    //         ipv4_lpm.apply();
+    //     }
+    // }
+
     apply {
-        if (hdr.ipv4.isValid()) {
+        if(hdr.ipv4.isValid()){
+            if(hdr.ipv4.protocol == PROTO_TCP){
+                synack_entry.apply();
+                // if((hdr.tcp.syn == 1)){
+                //checking();
+                // }
+                
+            }
             ipv4_lpm.apply();
         }
     }

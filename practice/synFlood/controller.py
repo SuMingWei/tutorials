@@ -52,75 +52,10 @@ def writeTunnelForwardRules(p4info_helper,ingress_sw,port,dst_ip_addr,prefix):
     ingress_sw.WriteTableEntry(table_entry)
     print "Install host ingress tunnel rule on %s" % ingress_sw.name
 
-def writeTunnelRules(p4info_helper, ingress_sw, egress_sw, tunnel_id,
-                     dst_eth_addr, dst_ip_addr):
-    """
-    Installs three rules:
-    1) An tunnel ingress rule on the ingress switch in the ipv4_lpm table that
-       encapsulates traffic into a tunnel with the specified ID
-    2) A transit rule on the ingress switch that forwards traffic based on
-       the specified ID
-    3) An tunnel egress rule on the egress switch that decapsulates traffic
-       with the specified ID and sends it to the host
-
-    :param p4info_helper: the P4Info helper
-    :param ingress_sw: the ingress switch connection
-    :param egress_sw: the egress switch connection
-    :param tunnel_id: the specified tunnel ID
-    :param dst_eth_addr: the destination IP to match in the ingress rule
-    :param dst_ip_addr: the destination Ethernet address to write in the
-                        egress rule
-    """
-    # 1) Tunnel Ingress Rule
-    table_entry = p4info_helper.buildTableEntry(
-        table_name="MyIngress.ipv4_lpm",
-        match_fields={
-            "hdr.ipv4.dstAddr": (dst_ip_addr, 32)
-        },
-        action_name="MyIngress.myTunnel_ingress",
-        action_params={
-            "dst_id": tunnel_id,
-        })
-    ingress_sw.WriteTableEntry(table_entry)
-    print "Installed ingress tunnel rule on %s" % ingress_sw.name
-
-    # 2) Tunnel Transit Rule
-    # The rule will need to be added to the myTunnel_exact table and match on
-    # the tunnel ID (hdr.myTunnel.dst_id). Traffic will need to be forwarded
-    # using the myTunnel_forward action on the port connected to the next switch.
-    #
-    # For our simple topology, switch 1 and switch 2 are connected using a
-    # link attached to port 2 on both switches. We have defined a variable at
-    # the top of the file, SWITCH_TO_SWITCH_PORT, that you can use as the output
-    # port for this action.
-    #
-    # We will only need a transit rule on the ingress switch because we are
-    # using a simple topology. In general, you'll need on transit rule for
-    # each switch in the path (except the last switch, which has the egress rule),
-    # and you will need to select the port dynamically for each switch based on
-    # your topology.
-
-    # TODO build the transit rule
-    # TODO install the transit rule on the ingress switch
-    print "TODO Install transit tunnel rule"
-
-    # 3) Tunnel Egress Rule
-    # For our simple topology, the host will always be located on the
-    # SWITCH_TO_HOST_PORT (port 1).
-    # In general, you will need to keep track of which port the host is
-    # connected to.
-    table_entry = p4info_helper.buildTableEntry(
-        table_name="MyIngress.myTunnel_exact",
-        match_fields={
-            "hdr.myTunnel.dst_id": tunnel_id
-        },
-        action_name="MyIngress.myTunnel_egress",
-        action_params={
-            "dstAddr": dst_eth_addr,
-            "port": SWITCH_TO_HOST_PORT
-        })
-    egress_sw.WriteTableEntry(table_entry)
-    print "Installed egress tunnel rule on %s" % egress_sw.name
+def SendDigestEntry(p4info_helper,sw,digest_name=None):
+    digest_entry = p4info_helper.buildDigestEntry(digest_name=digest_name)
+    sw.WriteDigestEntry(digest_entry)
+    print "send digestEntry via p4Runtime"
 
 def readTableRules(p4info_helper, sw):
     """
@@ -173,6 +108,12 @@ def printGrpcError(e):
     print "(%s)" % status_code.name,
     traceback = sys.exc_info()[2]
     print "[%s:%d]" % (traceback.tb_frame.f_code.co_filename, traceback.tb_lineno)
+
+def prettify(IP_string):
+    return '.'.join('%d' % ord(b) for b in IP_string)
+
+def int_prettify(int_string):
+    return int(''.join('%d' % ord(b) for b in int_string))
 
 
 def main(p4info_file_path, bmv2_file_path):
@@ -405,9 +346,33 @@ def main(p4info_file_path, bmv2_file_path):
         writeTunnelForwardRules(p4info_helper,ingress_sw=s17,port=1,dst_ip_addr="10.0.0.0",prefix=8)
         writeTunnelForwardRules(p4info_helper,ingress_sw=s17,port=2,dst_ip_addr="11.0.0.0",prefix=8)
 
+        # test digest
+        SendDigestEntry(p4info_helper,sw=s1,digest_name="syn_ack_digest")
+        SendDigestEntry(p4info_helper,sw=s1,digest_name="check_digest")
+
+        while True:
+            digests = s1.DigestList()
+            print digests
+            if digests.WhichOneof("update") == "digest":
+                digest = digests.digest
+                digest_name = p4info_helper.get_digests_name(digest.digest_id)
+                if digest_name == "syn_ack_digest":
+                    print "digest name: ", digest_name
+                    print "get syn digest data: dst_IP=",prettify(digest.data[0].struct.members[0].bitstring)
+                    print "=========================================="
+                elif digest_name == "check_digest":
+                    print "digest name: ", digest_name
+                    print "get syn digest data: dst_IP=",prettify(digest.data[0].struct.members[0].bitstring)
+                    print "get syn digest data: index=",int_prettify(digest.data[0].struct.members[1].bitstring)
+                    print "=========================================="
+            
+            
+
+
+
         # TODO Uncomment the following two lines to read table entries from s1 and s2
-        # readTableRules(p4info_helper, s1)
         # readTableRules(p4info_helper, s2)
+        # readTableRules(p4info_helper, s1)
 
         # Print the tunnel counters every 2 seconds
         # while True:
