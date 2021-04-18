@@ -52,6 +52,21 @@ def writeTunnelForwardRules(p4info_helper,ingress_sw,port,dst_ip_addr,prefix):
     ingress_sw.WriteTableEntry(table_entry)
     print "Install host ingress tunnel rule on %s" % ingress_sw.name
 
+# drop packet
+def writeDropForwardRules(p4info_helper,ingress_sw,port):
+    table_entry = p4info_helper.buildTableEntry(
+        table_name = "BasicIngress.drop_blacklist",
+        match_fields = {
+            "standard_metadata.ingress_port":port,
+            "hdr.ipv4.dstAddr":("10.0.1.1",32)
+        },
+        action_name = "BasicIngress.drop",
+    )
+    # write into ingress of target switch
+    ingress_sw.WriteTableEntry(table_entry)
+    print "Install drop rule on %s port %s" % (ingress_sw.name,port)
+
+# build connection with controller
 def SendDigestEntry(p4info_helper,sw,digest_name=None):
     digest_entry = p4info_helper.buildDigestEntry(digest_name=digest_name)
     sw.WriteDigestEntry(digest_entry)
@@ -109,12 +124,13 @@ def printGrpcError(e):
     traceback = sys.exc_info()[2]
     print "[%s:%d]" % (traceback.tb_frame.f_code.co_filename, traceback.tb_lineno)
 
+# convert ascii to string
 def prettify(IP_string):
     return '.'.join('%d' % ord(b) for b in IP_string)
 
+# convert ascii to integer
 def int_prettify(int_string):
     return int(''.join('%d' % ord(b) for b in int_string))
-
 
 def main(p4info_file_path, bmv2_file_path):
     # Instantiate a P4Runtime helper from the p4info file
@@ -347,8 +363,11 @@ def main(p4info_file_path, bmv2_file_path):
         writeTunnelForwardRules(p4info_helper,ingress_sw=s17,port=2,dst_ip_addr="11.0.0.0",prefix=8)
 
         # test digest
-        SendDigestEntry(p4info_helper,sw=s1,digest_name="syn_ack_digest")
+        SendDigestEntry(p4info_helper,sw=s1,digest_name="debug_digest")
         SendDigestEntry(p4info_helper,sw=s1,digest_name="check_digest")
+        #SendDigestEntry(p4info_helper,sw=s2,digest_name="syn_ack_digest")
+
+        blacklist = []
 
         while True:
             digests = s1.DigestList()
@@ -356,16 +375,29 @@ def main(p4info_file_path, bmv2_file_path):
             if digests.WhichOneof("update") == "digest":
                 digest = digests.digest
                 digest_name = p4info_helper.get_digests_name(digest.digest_id)
-                if digest_name == "syn_ack_digest":
+                if digest_name == "debug_digest":
+                    srcIP = prettify(digest.data[0].struct.members[0].bitstring)
+                    dstIP = prettify(digest.data[0].struct.members[1].bitstring)
+                    PORT = int_prettify(digest.data[0].struct.members[2].bitstring)
+                    TIMESTAMP = int_prettify(digest.data[0].struct.members[3].bitstring)
                     print "digest name: ", digest_name
-                    print "get syn digest data: dst_IP=",prettify(digest.data[0].struct.members[0].bitstring)
+                    print "get syn digest data: src_IP=",srcIP
+                    print "get syn digest data: dst_IP=",dstIP
+                    print "get syn digest data: ingress port=",PORT
+                    print "get syn digest data: timestamp=",TIMESTAMP
                     print "=========================================="
+                    # if "11.0.0.1" not in blacklist:
+                    #     blacklist.append("11.0.0.1")
+                    #     writeDropForwardRules(p4info_helper,ingress_sw=s6,port=2)
                 elif digest_name == "check_digest":
+                    dstIP = prettify(digest.data[0].struct.members[0].bitstring)
                     print "digest name: ", digest_name
-                    print "get syn digest data: dst_IP=",prettify(digest.data[0].struct.members[0].bitstring)
-                    print "get syn digest data: index=",int_prettify(digest.data[0].struct.members[1].bitstring)
+                    print "get syn digest data: dst_IP=",dstIP
                     print "=========================================="
-            
+
+                
+                    
+                
             
 
 

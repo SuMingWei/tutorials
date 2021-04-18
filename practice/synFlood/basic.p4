@@ -13,6 +13,8 @@ typedef bit<9>  egressSpec_t;
 typedef bit<48> macAddr_t;
 typedef bit<32> ip4Addr_t;
 
+typedef bit<48> time_t;
+
 header ethernet_t {
     macAddr_t dstAddr;
     macAddr_t srcAddr;
@@ -54,13 +56,15 @@ header tcp_t{
     bit<16> urgentPtr;
 }
 
-struct syn_ack_digest{
-    bit<32> IP;
+struct debug_digest{
+    bit<32> srcIP;
+    bit<32> dstIP;
+    bit<9> port;
+    bit<48> timestamp;
 }
 
 struct check_digest{
     bit<32> dst_IP;
-    bit<32> index;
 }
 
 struct metadata {
@@ -117,7 +121,6 @@ control MyVerifyChecksum(inout headers hdr, inout metadata meta) {
     apply {  }
 }
 
-
 /*************************************************************************
 **************  I N G R E S S   P R O C E S S I N G   *******************
 *************************************************************************/
@@ -156,46 +159,62 @@ control BasicIngress(inout headers hdr,
         default_action = NoAction();
     }
 
+    table drop_blacklist {
+        key = {
+            standard_metadata.ingress_port: exact;
+            hdr.ipv4.dstAddr: lpm;
+        }
+        actions = {
+            drop;
+            NoAction;
+        }
+        size = 1024;
+        default_action = NoAction();
+    }
+
     // test degist
-    bit<32> apply_index = 0;
-    action new_synack(){
-        digest<syn_ack_digest>((bit<32>)1024,{
-            hdr.ipv4.dstAddr
+
+    action debuging(){
+        digest<debug_digest>((bit<32>)1024,{
+            hdr.ipv4.srcAddr,
+            hdr.ipv4.dstAddr,
+            standard_metadata.ingress_port,
+            standard_metadata.ingress_global_timestamp
         });
     }
 
     action checking(){
         digest<check_digest>((bit<32>)1024,{
-            hdr.ipv4.dstAddr,
-            apply_index
+            hdr.ipv4.dstAddr
         });
     }
 
-    table synack_entry {
-        key = {
-            hdr.ipv4.dstAddr: lpm;
-        }
-        actions = {
-            new_synack;
-            checking;
-        }
-        size = 1024;
-        default_action = new_synack();
-    }
-
-    // apply {
-    //     if (hdr.ipv4.isValid()) {
-    //         ipv4_lpm.apply();
+    // table debug_entry {
+    //     key = {
+    //         hdr.ipv4.dstAddr: lpm;
     //     }
+    //     actions = {
+    //         debuging;
+    //     }
+    //     size = 1024;
+    //     default_action = debuging();
     // }
 
     apply {
         if(hdr.ipv4.isValid()){
             if(hdr.ipv4.protocol == PROTO_TCP){
-                synack_entry.apply();
-                // if((hdr.tcp.syn == 1)){
-                //checking();
-                // }
+                if(drop_blacklist.apply().hit){
+                    return;
+                }
+                if(hdr.tcp.syn == 1 && hdr.tcp.ack == 0){
+                    debuging();
+                }else{
+                    checking();
+                }
+                
+                
+                
+                
                 
             }
             ipv4_lpm.apply();
