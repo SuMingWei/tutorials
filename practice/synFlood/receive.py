@@ -54,9 +54,12 @@ def established(pkt):
     if node not in estLink:
         estLink.append(node)
         print estLink
+    return
 
 def recv_data(pkt):
-    print "got a message %s" % pkt[Raw].load
+    if Raw in pkt:
+        print "got a message %s" % pkt[Raw].load
+    return
 
 def main():
     print "sniffing on %s" % iface

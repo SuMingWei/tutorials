@@ -28,25 +28,14 @@ class TCPHandshake():
         # l3
         self.addr = "10.0.1.1" # default send to h1
         # l4
-        self.dstPort = int(sys.argv[1])
-        self.srcPort = 2345
+        self.dstPort = random.randint(49152,65535)
+        self.srcPort = 1234
         self.seqNum = 100
         self.ackNum = 0
 
     def start(self):
         print "sending on interface %s to %s" % (self.iface, str(self.addr))
         return self.send_syn()
-
-    def send_syn(self):
-        l2 = Ether(src=get_if_hwaddr(self.iface), dst='ff:ff:ff:ff:ff:ff')
-        syn = l2 / IP(dst=self.addr) / TCP(dport=self.dstPort, sport=self.srcPort,flags='S',seq=self.seqNum)
-        # send syn packet
-        print "send syn"
-        syn.show2()
-        sendp(syn, iface=self.iface, verbose=False)
-        self.seqNum += 1
-        # received packet from target
-        sniff(iface=self.iface,prn = lambda x: self.handle_recv(x),count=1)
 
     def handle_recv(self,pkt):
         if IP in pkt and TCP in pkt:
@@ -58,6 +47,19 @@ class TCPHandshake():
                 else:
                     print "got other packet"
         return
+        
+    def send_syn(self):
+        l2 = Ether(src=get_if_hwaddr(self.iface), dst='ff:ff:ff:ff:ff:ff')
+        syn = l2 / IP(dst=self.addr) / TCP(dport=self.dstPort, sport=self.srcPort,flags='S',seq=self.seqNum)
+        # send syn packet
+        print "send syn"
+        syn.show2()
+        sendp(syn, iface=self.iface, verbose=False)
+        self.seqNum += 1
+        # received packet from target
+        sniff(iface=self.iface,prn = lambda x: self.handle_recv(x),count=1)
+
+    
 
     def send_ack(self,pkt):
         l2 = Ether(src=get_if_hwaddr(self.iface), dst='ff:ff:ff:ff:ff:ff')
@@ -69,9 +71,9 @@ class TCPHandshake():
         # received packet from target
         sniff(iface=self.iface,prn = lambda x: self.handle_recv(x),count=1,timeout=1)
 
-    def send_data(self):
+    def send_data(self,mes):
         l2 = Ether(src=get_if_hwaddr(self.iface), dst='ff:ff:ff:ff:ff:ff')
-        pkt = l2 / IP(dst=self.addr) / TCP(dport=self.dstPort, sport=self.srcPort,flags='A',seq=self.seqNum) / "hello"
+        pkt = l2 / IP(dst=self.addr) / TCP(dport=self.dstPort, sport=self.srcPort,flags='A',seq=self.seqNum) / mes
         # send ack pkt
         print "send data"
         pkt.show2()
@@ -80,9 +82,13 @@ class TCPHandshake():
 
 def main():
     tcp_handshake = TCPHandshake()
+    print "start hand shaking"
     tcp_handshake.start()
     print "handshake finished"
-    tcp_handshake.send_data()
+    print "=============================="
+    print "send data"
+    for i in range(1,4):
+        tcp_handshake.send_data(str(i))
     
     
 
