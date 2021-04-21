@@ -21,50 +21,52 @@ def get_if():
         exit(1)
     return iface
 
-# interface
-iface = get_if()
+class BindInfo():
+    def __init__(self):
+        # interface
+        self.iface = get_if()
+        # establish link 
+        self.estLink = []
 
-# establish link 
-estLink = []
-
-def handle_pkt(pkt):
-    if IP in pkt and TCP in pkt :
-        print "got a packet"
-        pkt.show2()
-        sys.stdout.flush()
+    def established(self,pkt):
         node = [pkt[IP].src, pkt[TCP].sport]
-        if node in estLink:
-            recv_data(pkt)
-        else:
-            if pkt[TCP].flags == 0b000010: # syn
-                return send_synack(pkt)
-            elif pkt[TCP].flags == 0b010000: # ack
-                return established(pkt)
+        if node not in self.estLink:
+            self.estLink.append(node)
+            #print self.estLink
+        return
 
-def send_synack(pkt):
-    l2 = Ether(src=get_if_hwaddr(iface), dst=pkt[Ether].src)
-    synack = l2 / IP(dst=pkt[IP].src) / TCP(dport=pkt[TCP].sport, sport=pkt[TCP].dport,flags='SA',ack=pkt[TCP].seq + 1, seq=200)
-    print "send syn/ack pkt"
-    synack.show2()
-    sendp(synack)
-    sniff(iface = iface,prn = lambda x: handle_pkt(x))
+    def handle_pkt(self,pkt):
+        if IP in pkt and TCP in pkt :
+            print "got a packet"
+            pkt.show2()
+            #sys.stdout.flush()
+            node = [pkt[IP].src, pkt[TCP].sport]
+            if node in self.estLink:
+                self.recv_data(pkt)
+            else:
+                if pkt[TCP].flags == 0b000010: # syn
+                    return self.send_synack(pkt)
+                elif pkt[TCP].flags == 0b010000: # ack
+                    return self.established(pkt)
 
-def established(pkt):
-    node = [pkt[IP].src, pkt[TCP].sport]
-    if node not in estLink:
-        estLink.append(node)
-        print estLink
-    return
+    def send_synack(self,pkt):
+        l2 = Ether(src=get_if_hwaddr(self.iface), dst=pkt[Ether].src)
+        synack = l2 / IP(dst=pkt[IP].src) / TCP(dport=pkt[TCP].sport, sport=pkt[TCP].dport,flags='SA',ack=pkt[TCP].seq + 1, seq=200)
+        print "send syn/ack pkt"
+        synack.show2()
+        sendp(synack)
+        sniff(iface = self.iface,prn = lambda x: self.handle_pkt(x))
 
-def recv_data(pkt):
-    if Raw in pkt:
-        print "got a message %s" % pkt[Raw].load
-    return
+    def recv_data(self,pkt):
+        if Raw in pkt:
+            print "got a message %s" % pkt[Raw].load
+        return
 
 def main():
-    print "sniffing on %s" % iface
-    sys.stdout.flush()
-    sniff(iface = iface,prn = lambda x: handle_pkt(x))
+    bindinfo = BindInfo()
+    print "sniffing on %s" % bindinfo.iface
+    #sys.stdout.flush()
+    sniff(iface = bindinfo.iface,prn = lambda x: bindinfo.handle_pkt(x))
 
 if __name__ == '__main__':
     main()
