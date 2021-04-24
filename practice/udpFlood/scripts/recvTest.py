@@ -41,7 +41,8 @@ def packet_sniff(pkt):
 def main():
     # a = sniff(count=10)
     # a.nsummary()
-    sniff(filter="udp and host 127.0.0.1", prn=packet_sniff)
+    # sniff(filter="udp and host 127.0.0.1", prn=packet_sniff)
+    sniff(filter="udp" ,prn = packet_sniff)
 
 if __name__ == '__main__':
     main()

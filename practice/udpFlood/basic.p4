@@ -150,6 +150,7 @@ control MyDeparser(
     apply {
         packet.emit(hdr.ethernet);
         packet.emit(hdr.ipv4);
+        packet.emit(hdr.udp);
     }
 }
 
