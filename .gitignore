@@ -34,3 +34,7 @@ logs/
 
 # Image
 topo_port.png
+
+# redunt file
+vm/.#user-bootstrap.sh
+vm/4913

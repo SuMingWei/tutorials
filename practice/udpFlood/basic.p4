@@ -99,12 +99,7 @@ control MyIngress(
         if (hdr.ipv4.isValid()) {
             // apply table
             ipv4_lpm.apply();
-            if (hdr.ipv4.srcAddr == 0x0a000101){
-                standard_metadata.priority = (bit<3>)0;
-            }
-            else if (hdr.ipv4.srcAddr == 0x0a000102){
-                standard_metadata.priority = (bit<3>)7;
-            }
+            
         }
     }
 }
