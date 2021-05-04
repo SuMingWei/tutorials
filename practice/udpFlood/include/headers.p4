@@ -28,3 +28,14 @@ header udp_t {
     bit<16> len;                    // Length
     bit<16> checksum;               // Checksum
 }
+
+// metadata for Meter
+struct metadata {
+    bit<32>      meter_tag;
+}
+
+struct headers {
+    ethernet_t   ethernet;
+    ipv4_t       ipv4;
+    udp_t        udp;
+}

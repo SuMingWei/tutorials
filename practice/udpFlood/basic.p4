@@ -6,16 +6,6 @@
 // headers
 #include "./include/headers.p4"
 
-struct metadata {
-    /* empty */
-}
-
-struct headers {
-    ethernet_t   ethernet;
-    ipv4_t       ipv4;
-    udp_t        udp;
-}
-
 /********************** P A R S E R  ***********************************/
 
 parser MyParser(
@@ -66,6 +56,10 @@ control MyIngress(
     inout metadata meta, 
     inout standard_metadata_t standard_metadata
 ) {
+
+    // Meter
+    meter(10, MeterType.packets) my_meter;
+    // action
     action drop() {
         mark_to_drop(standard_metadata);
     }
@@ -80,7 +74,12 @@ control MyIngress(
         // Decrements the TTL
         hdr.ipv4.ttl = hdr.ipv4.ttl - 1;
     }
-    
+
+    action m_action(bit<32> meter_idx) {
+        my_meter.execute_meter((bit<32>)meter_idx, meta.meter_tag);
+    }      
+
+    // tables
     table ipv4_lpm {
         key = {
             hdr.ipv4.dstAddr: lpm;
@@ -93,13 +92,36 @@ control MyIngress(
         size = 1024;
         default_action = drop();
     }
-    
+    table m_table {
+
+        key = {
+            hdr.ethernet.dstAddr: lpm;
+        }
+        actions = {
+            m_action;
+            NoAction;
+        }
+        size = 1024;
+        default_action = NoAction();
+    }
+    table debug {
+        key = {
+            meta.meter_tag: exact;
+        }
+        actions = {
+            NoAction;
+        }
+        size = 1 ;
+        default_action = NoAction();
+    }
+
     apply {
         // only if the header ipv4 is valid
         if (hdr.ipv4.isValid()) {
             // apply table
             ipv4_lpm.apply();
-            
+            m_table.apply();
+            debug.apply();
         }
     }
 }
