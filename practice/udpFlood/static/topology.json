@@ -50,8 +50,8 @@
         "s13":{},
         "s14":{},
         "s15":{ "runtime_json" : "static/s15-runtime.json" },
-        "s16":{ "runtime_json" : "static/s16-runtime.json" },
-        "s17":{ "runtime_json" : "static/s17-runtime.json" }
+        "s16":{ "runtime_json" : "static/r1-runtime.json" },
+        "s17":{ "runtime_json" : "static/r2-runtime.json" }
     },
     "links":[
         ["h1","s1-p1"],["s1-p2","s16-p1"],["s16-p2","s17-p1"],["s17-p2","s2-p1"],

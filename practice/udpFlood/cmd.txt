@@ -1,0 +1,2 @@
+meter_set_rates my_meter 1 0.0001:1 0.0005:1
+meter_get_rates my_meter 1

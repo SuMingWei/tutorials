@@ -58,7 +58,7 @@ control MyIngress(
 ) {
 
     // Meter
-    meter(10, MeterType.packets) my_meter;
+    meter(20, MeterType.packets) my_meter;
     // action
     action drop() {
         mark_to_drop(standard_metadata);
@@ -95,7 +95,7 @@ control MyIngress(
     table m_table {
 
         key = {
-            hdr.ethernet.dstAddr: lpm;
+            standard_metadata.ingress_port  : exact;
         }
         actions = {
             m_action;
@@ -104,9 +104,12 @@ control MyIngress(
         size = 1024;
         default_action = NoAction();
     }
+    
     table debug {
         key = {
-            meta.meter_tag: exact;
+            hdr.ipv4.srcAddr                : exact;
+            meta.meter_tag                  : exact;
+            standard_metadata.ingress_port  : exact;
         }
         actions = {
             NoAction;

@@ -81,6 +81,7 @@ cd ..
 cd behavioral-model
 ./autogen.sh
 # ./configure --enable-debugger --with-pi
+# ./configure 'CXXFLAGS=-g -O3' 'CFLAGS=-g -O3' --enable-debugger --with-pi
 ./configure 'CXXFLAGS=-g -O3' 'CFLAGS=-g -O3' --disable-logging-macros --disable-elogger --with-pi
 make -j${NUM_CORES}
 sudo make install
