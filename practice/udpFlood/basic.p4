@@ -104,7 +104,22 @@ control MyIngress(
         size = 1024;
         default_action = NoAction();
     }
-    
+    table color_action {
+        key = {
+            meta.meter_tag                  : exact;
+        }
+        actions = {
+            drop;
+            NoAction;
+        }
+        size = 3 ;
+        const entries = {
+            METER_GREEN     : NoAction();
+            METER_YELLOW    : NoAction();
+            METER_RED       : drop();
+            _               : NoAction();
+        }
+    }
     table debug {
         key = {
             hdr.ipv4.srcAddr                : exact;

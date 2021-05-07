@@ -12,3 +12,8 @@ const bit<8>  PROTO_IPV4    = 4;        // IPv4 Encapsulation
 const bit<8>  PROTO_TCP     = 6;        // Transmission Control Protocol (TCP)
 const bit<8>  PROTO_UDP     = 17;       // User Datagram Protocol (UDP)
 const bit<8>  PROTO_IPV6    = 41;       // IPv6 Encapsulation
+
+/* Meter Color const */
+const bit<32> METER_GREEN   = 0;
+const bit<32> METER_YELLOW  = 1;
+const bit<32> METER_RED     = 2;
