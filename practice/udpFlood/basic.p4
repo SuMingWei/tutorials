@@ -58,7 +58,7 @@ control MyIngress(
 ) {
 
     // Meter
-    meter(20, MeterType.packets) my_meter;
+    meter((MAX_PORT+1), MeterType.packets) my_meter;
     // action
     action drop() {
         mark_to_drop(standard_metadata);
@@ -89,7 +89,7 @@ control MyIngress(
             drop;
             NoAction;
         }
-        size = 1024;
+        size = TABLE_SIZE;
         default_action = drop();
     }
     table m_table {
@@ -101,7 +101,7 @@ control MyIngress(
             m_action;
             NoAction;
         }
-        size = 1024;
+        size = TABLE_SIZE;
         default_action = NoAction();
     }
     table color_action {
@@ -112,13 +112,13 @@ control MyIngress(
             drop;
             NoAction;
         }
-        size = 3 ;
         const entries = {
             METER_GREEN     : NoAction();
             METER_YELLOW    : NoAction();
             METER_RED       : drop();
-            _               : NoAction();
         }
+        size = TABLE_SIZE;
+        const default_action = NoAction();
     }
     table debug {
         key = {
@@ -139,6 +139,7 @@ control MyIngress(
             // apply table
             ipv4_lpm.apply();
             m_table.apply();
+            color_action.apply();
             debug.apply();
         }
     }

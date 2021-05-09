@@ -146,6 +146,34 @@ def printCounter(p4info_helper, sw, counter_name, index):
                 counter.data.packet_count, counter.data.byte_count
             ))
 
+def writeMeterTableRules(p4info_helper, sw, ingressPort, meter_index):
+    """
+
+    :param p4info_helper: the P4Info helper
+    :param sw:  the switch connection
+    :param ingressPort: the port of the meter
+    :param meter_index: the meter index (in my case, the ingress port)
+    """
+    matches = {
+        "standard_metadata.ingress_port": ingressPort
+    }
+    table_entry = p4info_helper.buildTableEntry(
+        table_name="MyIngress.m_table",
+        match_fields=matches,
+        action_name="MyIngress.m_action",
+        action_params={
+            "meter_idx": (meter_index+1),
+    })
+    sw.WriteTableEntry(table_entry, False)
+
+def readMeterFlowRules(p4info_helper, sw, meter, bytes, interval):
+    meter_id = p4info_helper.get_meters_id("MyIngress.my_meter")
+    sw.WriteMeter(meter_id, (meter+1), bytes, bytes)
+
+def writeMeterFlowRules(p4info_helper, sw, meter, bytes, interval):
+    meter_id = p4info_helper.get_meters_id("MyIngress.my_meter")
+    sw.WriteMeter(meter_id, (meter+1), bytes, bytes)
+
 def main(p4info_file_path, bmv2_file_path):
     # Instantiate a P4Runtime helper from the p4info file
     p4info_helper = p4runtime_lib.helper.P4InfoHelper(p4info_file_path)
@@ -164,11 +192,22 @@ def main(p4info_file_path, bmv2_file_path):
             address='127.0.0.1:50052',
             device_id=1,
             proto_dump_file='logs/s2-p4runtime-requests.txt')
-
+        s3 = p4runtime_lib.bmv2.Bmv2SwitchConnection(
+            name='s2',
+            address='127.0.0.1:50052',
+            device_id=1,
+            proto_dump_file='logs/s2-p4runtime-requests.txt')
+        s15 = p4runtime_lib.bmv2.Bmv2SwitchConnection(
+            name='s2',
+            address='127.0.0.1:50052',
+            device_id=1,
+            proto_dump_file='logs/s2-p4runtime-requests.txt')
         # Send master arbitration update message to establish this controller as
         # master (required by P4Runtime before performing any other write operation)
         s1.MasterArbitrationUpdate()
         s2.MasterArbitrationUpdate()
+        s3.MasterArbitrationUpdate()
+        s15.MasterArbitrationUpdate()
 
         # Install the P4 program on the switches
         s1.SetForwardingPipelineConfig(p4info=p4info_helper.p4info,
@@ -177,7 +216,10 @@ def main(p4info_file_path, bmv2_file_path):
         s2.SetForwardingPipelineConfig(p4info=p4info_helper.p4info,
                                        bmv2_json_file_path=bmv2_file_path)
         print("Installed P4 Program using SetForwardingPipelineConfig on s2")
-
+        s3.SetForwardingPipelineConfig(p4info=p4info_helper.p4info,
+                                       bmv2_json_file_path=bmv2_file_path)
+        s15.SetForwardingPipelineConfig(p4info=p4info_helper.p4info,
+                                       bmv2_json_file_path=bmv2_file_path)
         # Write the rules that tunnel traffic from h1 to h2
         writeTunnelRules(p4info_helper, ingress_sw=s1, egress_sw=s2, tunnel_id=100,
                          dst_eth_addr="08:00:00:00:02:22", dst_ip_addr="10.0.2.2")
@@ -186,11 +228,10 @@ def main(p4info_file_path, bmv2_file_path):
         writeTunnelRules(p4info_helper, ingress_sw=s2, egress_sw=s1, tunnel_id=200,
                          dst_eth_addr="08:00:00:00:01:11", dst_ip_addr="10.0.1.1")
 
-        # TODO Uncomment the following two lines to read table entries from s1 and s2
         readTableRules(p4info_helper, s1)
         readTableRules(p4info_helper, s2)
 
-        # Print the tunnel counters every 2 seconds
+        # Main Control
         while True:
             sleep(2)
             print('\n----- Reading tunnel counters -----')
