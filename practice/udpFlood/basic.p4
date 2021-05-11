@@ -56,7 +56,6 @@ control MyIngress(
     inout metadata meta, 
     inout standard_metadata_t standard_metadata
 ) {
-
     // Meter
     meter((MAX_PORT+1), MeterType.packets) my_meter;
     // action
@@ -117,7 +116,7 @@ control MyIngress(
             METER_YELLOW    : NoAction();
             METER_RED       : drop();
         }
-        size = TABLE_SIZE;
+        // size = TABLE_SIZE;
         const default_action = NoAction();
     }
     table debug {
@@ -152,7 +151,11 @@ control MyEgress(
     inout metadata meta,
     inout standard_metadata_t standard_metadata
 ) {
-    apply {  }
+    // Counter
+    counter((bit<32>)MAX_PORT+1, CounterType.both) egressPortCounter;
+    apply { 
+        egressPortCounter.count((bit<32>)standard_metadata.egress_port);
+    }
 }
 
 /************   C H E C K S U M    C O M P U T A T I O N   *************/
