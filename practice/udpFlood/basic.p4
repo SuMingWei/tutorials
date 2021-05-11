@@ -152,7 +152,7 @@ control MyEgress(
     inout standard_metadata_t standard_metadata
 ) {
     // Counter
-    counter((bit<32>)MAX_PORT+1, CounterType.both) egressPortCounter;
+    counter((bit<32>)MAX_PORT+1, CounterType.bytes) egressPortCounter;
     apply { 
         egressPortCounter.count((bit<32>)standard_metadata.egress_port);
     }
