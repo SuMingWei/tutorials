@@ -100,6 +100,20 @@ class SwitchConnection(object):
         else:
             self.client_stub.Write(request)
 
+    # Delete 
+    def DeleteTableEntry(self, table_entry, dry_run=False):
+        request = p4runtime_pb2.WriteRequest()
+        request.device_id = self.device_id
+        request.election_id.low = 1
+        update = request.updates.add()
+        # Assign DELETE Type for it
+        update.type = p4runtime_pb2.Update.DELETE
+        update.entity.table_entry.CopyFrom(table_entry)
+        if dry_run:
+            print "P4Runtime Delete: ", request
+        else:
+            self.client_stub.Write(request)
+
     def ReadTableEntries(self, table_id=None, dry_run=False):
         request = p4runtime_pb2.ReadRequest()
         request.device_id = self.device_id
@@ -172,6 +186,15 @@ class SwitchConnection(object):
         request = p4runtime_pb2.StreamMessageRequest()
         if dry_run:
             print "P4 Runtime DigestList Response: ", request 
+        else: 
+            self.requests_stream.put(request)
+            for item in self.stream_msg_resp:
+                return item 
+
+    def IdleTimeoutNotification(self, dry_run=False, **kwargs):
+        request = p4runtime_pb2.StreamMessageRequest()
+        if dry_run:
+            print "Idle Timeout Notification Response: ", request 
         else: 
             self.requests_stream.put(request)
             for item in self.stream_msg_resp:
