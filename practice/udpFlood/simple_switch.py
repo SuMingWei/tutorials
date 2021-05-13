@@ -1,3 +1,4 @@
+# coding=utf-8
 import os
 import sys
 import time
@@ -17,66 +18,141 @@ import subprocess
 # cli.communicate("show_tables")
 # cli.communicate("meters_get_rate my_meter 0")
 class simple_switch_cli:
+    def __init__(self, port=None):
+        self.port = port if port is not None else 9104
     def console(self, stdout=None):
         # if stdout is not None:
         #     return(subprocess.Popen('simple_switch_CLI --thrift-port 9104', shell=True,  stdin=subprocess.PIPE, stdout=subprocess.PIPE))
         # return(Popen(["bconsole"], stdout=PIPE, stderr=PIPE, stdin=PIPE))
-        return(subprocess.Popen('simple_switch_CLI --thrift-port 9104', shell=True,  stdin=subprocess.PIPE, stdout=subprocess.PIPE))
+        return(subprocess.Popen('simple_switch_CLI --thrift-port {}'.format(self.port), shell=True,  stdin=subprocess.PIPE, stdout=subprocess.PIPE))
         # 
     def show_tables(self):
         run = self.console().communicate("show_tables")
         return(run)
     def get_meter_rate(self, meter_name, meter_id):
-        rates = self.console().communicate("meter_get_rates %s %s"%(meter_name, meter_id))
+        rates = self.console().communicate("meter_get_rates %s %s"%(meter_name, meter_id))[0]
         return(rates)
     def read_counter(self, counter_name, counter_id):
-        counter = self.console().communicate("counter_read %s %s"%(counter_name, counter_id))
+        counter = self.console().communicate("counter_read %s %s"%(counter_name, counter_id))[0]
         return(counter)
     def get_time_elapsed(self):
-        time = self.console().communicate("get_time_elapsed")
+        time = self.console().communicate("get_time_elapsed")[0]
         return(time)
     def get_time_since_epoch(self):                  
         time = self.console().communicate("get_time_since_epoch")
         return(time)
-
-cli = simple_switch_cli()
-# cli.show_tables()
-# cli.get_meter_rate("my_meter",0)
-last_bytes = 0
-last_time_stamp_ms = 0
-cur_bytes = 0
-cur_time_stamp_ms = 0
-# bandwidth = 0
-# time_diff = 0
-for i in range(20):
-    time.sleep(0.25)
-    counter_text = cli.read_counter("egressPortCounter", 3)[0]
-    counter_text = counter_text.split()
-    # ['Obtaining', 'JSON', 'from', 'switch...', 'Done', 'Control', 'utility', 'for', 'runtime', 'P4', 'table', 'manipulation', 'RuntimeCmd:', 'egressPortCounter[3]=', 'BmCounterValue(packets=43,', 'bytes=65016)', 'RuntimeCmd:']
-    print(counter_text[13], counter_text[14], counter_text[15])
-    # counter_text[13] : 'egressPortCounter[3]='
-    # counter_text[14] : 'BmCounterValue(packets=43,'
-    # counter_text[15] : 'bytes=65016)'
+    def set_meter_rate(self, meter_name, meter_id, cir_burst, pir_burst):
+        rates = self.console().communicate("meter_set_rates %s %s %s %s"%(meter_name, meter_id, cir_burst, pir_burst))
+        return(rates)
+    def get_register_value(self, register_name, register_index):
+        reg = self.console().communicate("register_read %s %s"%(register_name, register_index))[0]
+        return(reg)
+# ================================================ #
+# 建立 CLI list 和 TimeStamp list
+cli = []
+timeStamp = []
+cli.append(simple_switch_cli(0))
+timeStamp.append(int(time.time()*1000.0))
+for i in range(15):
+    cli.append(simple_switch_cli(i+9090))
+    timeStamp.append(int(time.time()*1000.0))
+# cli = simple_switch_cli(9104)
+# ================================================ #
+# 設定Server-side的Detection用Meter
+print("[+] Setting Meter Server Bandwidth...")
+# 設為0.000005時是 40 kbits/sec, 200*0.000005時為最高 8 Mbits/sec
+# | green -4M+ yellow -8M+ red |
+Server_Bandwidth = 200
+Server_Max_Egress_Port = 20
+for i in range(Server_Max_Egress_Port+1):
+    cli[1].set_meter_rate("dstPortMeter", i, "{}:1".format(0.0000025*Server_Bandwidth), "{}:1".format(0.000005*Server_Bandwidth))
+# ================================================ #
+# # Detection on s1
+# Predefined_Threshold = 6000
+# last_value = int(cli[1].get_register_value("suspectedTraffic", 1).split()[14])
+# while True:
+#     # Assume Server is at port 1, so just monitor port 1
+#     time.sleep(0.1)
+#     reg = cli[1].get_register_value("suspectedTraffic", 1).split()
+#     # ['Obtaining', 'JSON', 'from', 'switch...', 'Done', 'Control', 'utility', 'for', 'runtime', 'P4', 'table', 'manipulation', 'RuntimeCmd:', 'suspectedTraffic[1]=', '28380', 'RuntimeCmd:']
+#     value = int(reg[14])
+#     delta = value - last_value
+#     last_value = value
+#     print(delta)
+#     # print(value)
+#     if delta > Predefined_Threshold:
+#         print(value, delta, "This is a alert") 
+# ================================================ #
+# 設定初始Bandwidth on s3
+print("[+] Initailize s3's Meter rate...\n")
+MAX_PORT = 20
+for i in range(MAX_PORT+1):
+    cli[3].set_meter_rate("my_meter", i, "{}:1".format(0.0000025*Server_Bandwidth), "{}:1".format(0.000005*Server_Bandwidth))
+# ================================================ #
+# 透過設定的egress Bandwidth和P4runtime讀取的ingress Bandwidth動態調整s3的ingress Bandwidth
+last_bytes = [0]*(MAX_PORT+1)
+last_time_stamp_ms = [0]*(MAX_PORT+1)
+cur_bytes = [0]*(MAX_PORT+1)
+cur_time_stamp_ms = [0]*(MAX_PORT+1)
+while True:
+    # 建立一個 list 儲存 switch的ingress bandwidth資訊
+    sw = [0]*(MAX_PORT+1)
+    # 獲得s3 egress時能用的Bandwidth與meter設定
+    rates = cli[3].get_meter_rate("my_meter", 2).split()
+    # ['Obtaining', 'JSON', 'from', 'switch...', 'Done', 'Control', 'utility', 'for', 'runtime', 'P4', 'table', 'manipulation', 'RuntimeCmd:', '0:', 'info', 'rate', '=', '1e-06,', 'burst', 'size', '=', '1', '1:', 'info', 'rate', '=', '5e-06,', 'burst', 'size', '=', '1', 'RuntimeCmd:']
+    # rates[17] : 1e-06,
+    # rates[21] : 1
+    # rates[26] : 5e-06,
+    # rates[30] : 1
+    CIR = float(rates[17][0:-1])*1000*8
+    CIR_BURST = int(rates[21])
+    PIR = float(rates[26][0:-1])*1000*8
+    PIR_BURST = int(rates[30])
+    for j in range(MAX_PORT+1):
+        # ================================================ #
+        # 獲得ingress_port的counter值
+        counter_text = cli[3].read_counter("ingressPortCounter", j)
+        counter_text = counter_text.split()
+        # ['Obtaining', 'JSON', 'from', 'switch...', 'Done', 'Control', 'utility', 'for', 'runtime', 'P4', 'table', 'manipulation', 'RuntimeCmd:', 'ingressPortCounter[3]=', 'BmCounterValue(packets=43,', 'bytes=65016)', 'RuntimeCmd:']
+        # counter_text[13] : 'ingressPortCounter[3]='
+        # counter_text[14] : 'BmCounterValue(packets=43,'
+        # counter_text[15] : 'bytes=65016)'
+        bytes_string = re.split("[(=)]",counter_text[15])
+        cur_bytes[j] = int(bytes_string[1])
+        if cur_bytes[j] == 0:
+            last_time_stamp_ms[j] = cur_time_stamp_ms[j]
+            last_bytes[j] = cur_bytes[j]
+            continue
+        # print("Current bytes in Counter : {} at port {}".format(cur_bytes[j], 3))
+        # ================================================ #
+        # 獲取現在時間以計算時間差
+        cur_time_stamp_ms[j] = int(time.time()*1000.0)
+        time_diff = (cur_time_stamp_ms[j] - last_time_stamp_ms[j])
+        # 計算與上次的counter值之差異
+        byte_diff = (cur_bytes[j] - last_bytes[j])
+        # 利用差異估算bandwidth
+        # 可能會有誤差, 原因 : 計算的時間過久, 導致計算出的bandwidth非當下而是有點delay
+        bandwidth = (byte_diff*1000/time_diff) if time_diff is not 0 else time_diff 
+        # print("Bandwidth : {} (bytes/sec)".format(bandwidth))
+        # print("Bandwidth : {} (bits/sec)".format(bandwidth*8))
+        # print("Bandwidth : {} (Kbits/sec)".format((bandwidth*8)/1024))
+        last_time_stamp_ms[j] = cur_time_stamp_ms[j]
+        last_bytes[j] = cur_bytes[j]
+        sw[j] = bandwidth*8
+    print("[INFO] Bandwidth on each ports : \n{}".format(sw))
+    # 建立一個 list 儲存計算後的ingress分配
+    ports_bandwidth = [0]*(MAX_PORT+1)
+    for i in range(MAX_PORT+1):
+        if sw[i] != 0:
+            ports_bandwidth[i] = 1
+    # 利用Fair的方式分配
+    number_ports_used = sum(ports_bandwidth)
+    print("[INFO] Current # of active ingress port : {}".format(number_ports_used))
+    if number_ports_used > 0:
+        _PIR = (float(PIR*1000.0))/40.0
+        for i in range(MAX_PORT+1):
+            if ports_bandwidth[i] == 0:
+                continue
+            print("[INFO] set meter PIR {} on port:{}...".format((1.0/number_ports_used)*_PIR*0.000005, i))
+            cli[3].set_meter_rate("my_meter", i, "{}:1".format("1e-06"), "{}:1".format((1.0/number_ports_used)*_PIR*0.000005))
     
-    bytes_string = re.split("[(=)]",counter_text[15])
-    # bytes_string = re.search("(.+?)=", counter_text[15]).group(1)
-    cur_bytes = int(bytes_string[1])
-    print(cur_bytes)
-    # ['Obtaining', 'JSON', 'from', 'switch...', 'Done', 'Control', 'utility', 'for', 'runtime', 'P4', 'table', 'manipulation', 'RuntimeCmd:', '4241346046', 'RuntimeCmd:']
-    # cur_time_stamp_ms = int(cli.get_time_elapsed()[0].split()[13])
-    # print(cur_time_stamp_ms)
-    cur_time_stamp_ms = int(time.time()*1000.0)
-    print(int(time.time()*1000.0))
-    if i == 0:
-        last_time_stamp_ms = cur_time_stamp_ms
-        last_bytes = cur_bytes
-        continue
-    time_diff = (cur_time_stamp_ms - last_time_stamp_ms)
-    byte_diff = (cur_bytes - last_bytes)
-    print("Time Diff : {} (ms)".format(time_diff))
-    print("Bytes Diff: {} (bytes)".format(byte_diff))
-    bandwidth = (byte_diff*1000/time_diff)
-    print("Bandwidth : {} (bytes/sec)".format(bandwidth))
-    print("Bandwidth : {} (bits/sec)".format(bandwidth*8))
-    last_time_stamp_ms = cur_time_stamp_ms
-    last_bytes = cur_bytes

@@ -19,5 +19,5 @@ const bit<32> METER_YELLOW  = 1;
 const bit<32> METER_RED     = 2;
 
 /* Meter const */
-#define MAX_PORT 1023
+#define MAX_PORT 20
 #define TABLE_SIZE 1023

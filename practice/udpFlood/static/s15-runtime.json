@@ -30,16 +30,6 @@
           "dstAddr": "08:00:02:03:15:01",
           "port": 1
         }
-      },
-      {
-        "table": "MyIngress.m_table",
-        "match": {
-          "standard_metadata.ingress_port": [1]
-        },
-        "action_name": "MyIngress.m_action",
-        "action_params": {
-          "meter_idx": 1
-        }
       }
     ]
   }
