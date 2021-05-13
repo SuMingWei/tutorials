@@ -4,6 +4,8 @@ import grpc
 import os
 import sys
 from time import sleep
+import random
+import threading
 
 # Import P4Runtime lib from parent utils dir
 # Probably there's a better way of doing this.
@@ -13,9 +15,6 @@ import p4runtime_lib.bmv2
 from p4runtime_lib.error_utils import printGrpcError
 from p4runtime_lib.switch import ShutdownAllSwitchConnections
 import p4runtime_lib.helper
-
-SWITCH_TO_HOST_PORT = 1
-SWITCH_TO_SWITCH_PORT = 2
 
 # forward from switch to host
 def writeHostForwardRules(p4info_helper,ingress_sw,dst_eth_addr,port,dst_ip_addr):
@@ -33,7 +32,7 @@ def writeHostForwardRules(p4info_helper,ingress_sw,dst_eth_addr,port,dst_ip_addr
     )
     # write into ingress of target switch
     ingress_sw.WriteTableEntry(table_entry)
-    print "Install host ingress tunnel rule on %s" % ingress_sw.name
+    print ("Install host ingress tunnel rule on %s") % ingress_sw.name
 
 # forward from switch to switch
 def writeTunnelForwardRules(p4info_helper,ingress_sw,port,dst_ip_addr,prefix):
@@ -50,27 +49,137 @@ def writeTunnelForwardRules(p4info_helper,ingress_sw,port,dst_ip_addr,prefix):
     )
     # write into ingress of target switch
     ingress_sw.WriteTableEntry(table_entry)
-    print "Install host ingress tunnel rule on %s" % ingress_sw.name
+    print ("Install host ingress tunnel rule on %s") % ingress_sw.name
 
 # drop packet
-def writeDropForwardRules(p4info_helper,ingress_sw,port):
+def writeDropForwardRules(p4info_helper,ingress_sw,src_ip_addr,src_tcp_port):
     table_entry = p4info_helper.buildTableEntry(
         table_name = "BasicIngress.drop_blacklist",
         match_fields = {
-            "standard_metadata.ingress_port":port,
-            "hdr.ipv4.dstAddr":("10.0.1.1",32)
+            "hdr.ipv4.srcAddr":(src_ip_addr,32),
+            "hdr.tcp.srcPort":src_tcp_port
         },
         action_name = "BasicIngress.drop",
     )
     # write into ingress of target switch
     ingress_sw.WriteTableEntry(table_entry)
-    print "Install drop rule on %s port %s" % (ingress_sw.name,port)
+    print ("Install drop rule on %s:%s") % (src_ip_addr,src_tcp_port)
+
+# insert secret key
+def writeSecretNumberRule(p4info_helper,ingress_sw,src_ip_addr,port,key):
+    # syn matching rule
+    table_entry = p4info_helper.buildTableEntry(
+        table_name = "BasicIngress.authentication",
+        match_fields = {
+            "hdr.ipv4.srcAddr":(src_ip_addr,0x00000f00), # ternary (value,mask)
+            "hdr.tcp.srcPort":(port,0x00f0),
+            "hdr.tcp.flags":(0b00000010,0b00010010), # syn
+            #"hdr.tcp.ackNo":(key,0x00000000) # don't care
+        },
+        action_name = "BasicIngress.transfer",
+        action_params = {
+            "key":key
+        },
+        priority=1
+    )
+    # write into ingress of target switch
+    ingress_sw.WriteTableEntry(table_entry)
+    # print "Install host ingress tunnel rule on %s" % ingress_sw.name
+ 
+    # ack matching rule
+    table_entry = p4info_helper.buildTableEntry(
+        table_name = "BasicIngress.authentication",
+        match_fields = {
+            "hdr.ipv4.srcAddr":(src_ip_addr,0x00000f00), # ternary (value,mask)
+            "hdr.tcp.srcPort":(port,0x00f0),
+            "hdr.tcp.flags":(0b00010000,0b00010010), # ack
+            "hdr.tcp.ackNo": (key+1,0xffffffff) # ackNo is seqNo + 1
+        },
+        action_name = "BasicIngress.validate",
+        priority=1
+    )
+    # write into ingress of target switch
+    ingress_sw.WriteTableEntry(table_entry)
+
+# delete secret key
+def deleteSecretNumberRule(p4info_helper,ingress_sw,src_ip_addr,port,key):
+    # syn matching rule
+    table_entry = p4info_helper.buildTableEntry(
+        table_name = "BasicIngress.authentication",
+        match_fields = {
+            "hdr.ipv4.srcAddr":(src_ip_addr,0x00000f00), # ternary (value,mask)
+            "hdr.tcp.srcPort":(port,0x00f0),
+            "hdr.tcp.flags":(0b00000010,0b00010010), # syn
+            #"hdr.tcp.ackNo":(key,0x00000000) # don't care
+        },
+        action_name = "BasicIngress.transfer",
+        action_params = {
+            "key":key
+        },
+        priority=1
+    )
+    # write into ingress of target switch
+    ingress_sw.DeleteTableEntry(table_entry)
+    # print "Install host ingress tunnel rule on %s" % ingress_sw.name
+ 
+    # ack matching rule
+    table_entry = p4info_helper.buildTableEntry(
+        table_name = "BasicIngress.authentication",
+        match_fields = {
+            "hdr.ipv4.srcAddr":(src_ip_addr,0x00000f00), # ternary (value,mask)
+            "hdr.tcp.srcPort":(port,0x00f0),
+            "hdr.tcp.flags":(0b00010000,0b00010010), # ack
+            "hdr.tcp.ackNo": (key+1,0xffffffff) # ackNo is seqNo + 1
+        },
+        action_name = "BasicIngress.validate",
+        priority=1
+    )
+    # write into ingress of target switch
+    ingress_sw.DeleteTableEntry(table_entry)
+
+# insert pinhole
+def writePinholeRule(p4info_helper,ingress_sw,src_ip_addr,src_tcp_port,dst_ip_addr,dst_tcp_port,egress_port):
+    # syn matching rule
+    table_entry = p4info_helper.buildTableEntry(
+        table_name = "BasicIngress.pinhole",
+        match_fields = {
+            "hdr.ipv4.srcAddr":src_ip_addr,
+            "hdr.tcp.srcPort":src_tcp_port,
+            "hdr.ipv4.dstAddr":dst_ip_addr,
+            "hdr.tcp.dstPort":dst_tcp_port
+        },
+        action_name = "BasicIngress.auth_forward",
+        action_params = {
+            "port":egress_port
+        },
+        timeout=60000000000
+    )
+    # write into ingress of target switch
+    ingress_sw.WriteTableEntry(table_entry)
+    print ("Install pinhole from %s:%s to %s:%s") % (src_ip_addr,src_tcp_port,dst_ip_addr,dst_tcp_port)
+
+# delete pinhole
+def deletePinholeRule(p4info_helper,ingress_sw,src_ip_addr,src_tcp_port,dst_ip_addr,dst_tcp_port):
+    # syn matching rule
+    table_entry = p4info_helper.buildTableEntry(
+        table_name = "BasicIngress.pinhole",
+        match_fields = {
+            "hdr.ipv4.srcAddr":src_ip_addr,
+            "hdr.tcp.srcPort":src_tcp_port,
+            "hdr.ipv4.dstAddr":dst_ip_addr,
+            "hdr.tcp.dstPort":dst_tcp_port
+        },
+        action_name = "BasicIngress.auth_forward"
+    )
+    # write into ingress of target switch
+    ingress_sw.DeleteTableEntry(table_entry)
+    print ("Delete pinhole from %s:%s to %s:%s") % (src_ip_addr,src_tcp_port,dst_ip_addr,dst_tcp_port)
 
 # build connection with controller
 def SendDigestEntry(p4info_helper,sw,digest_name=None):
     digest_entry = p4info_helper.buildDigestEntry(digest_name=digest_name)
     sw.WriteDigestEntry(digest_entry)
-    print "send digestEntry via p4Runtime"
+    print ("send digestEntry of %s") % digest_name
 
 def readTableRules(p4info_helper, sw):
     """
@@ -79,23 +188,23 @@ def readTableRules(p4info_helper, sw):
     :param p4info_helper: the P4Info helper
     :param sw: the switch connection
     """
-    print '\n----- Reading tables rules for %s -----' % sw.name
+    print ('\n----- Reading tables rules for %s -----') % sw.name
     for response in sw.ReadTableEntries():
         for entity in response.entities:
             entry = entity.table_entry
             # TODO For extra credit, you can use the p4info_helper to translate
             #      the IDs in the entry to names
             table_name = p4info_helper.get_tables_name(entry.table_id)
-            print '%s: ' % table_name,
+            print ('%s: ') % table_name,
             for m in entry.match:
-                print p4info_helper.get_match_field_name(table_name, m.field_id),
-                print '%r' % (p4info_helper.get_match_field_value(m),),
+                print (p4info_helper.get_match_field_name(table_name, m.field_id)),
+                print ('%r') % (p4info_helper.get_match_field_value(m),),
             action = entry.action.action
             action_name = p4info_helper.get_actions_name(action.action_id)
-            print '->', action_name,
+            print ('->'), action_name,
             for p in action.params:
-                print p4info_helper.get_action_param_name(action_name, p.param_id),
-                print '%r' % p.value,
+                print (p4info_helper.get_action_param_name(action_name, p.param_id)),
+                print ('%r') % p.value,
             print
 
 def printCounter(p4info_helper, sw, counter_name, index):
@@ -112,17 +221,17 @@ def printCounter(p4info_helper, sw, counter_name, index):
     for response in sw.ReadCounters(p4info_helper.get_counters_id(counter_name), index):
         for entity in response.entities:
             counter = entity.counter_entry
-            print "%s %s %d: %d packets (%d bytes)" % (
+            print ("%s %s %d: %d packets (%d bytes)") % (
                 sw.name, counter_name, index,
                 counter.data.packet_count, counter.data.byte_count
             )
 
 def printGrpcError(e):
-    print "gRPC Error:", e.details(),
+    print ("gRPC Error:)"), e.details(),
     status_code = e.code()
-    print "(%s)" % status_code.name,
+    print ("(%s)") % status_code.name,
     traceback = sys.exc_info()[2]
-    print "[%s:%d]" % (traceback.tb_frame.f_code.co_filename, traceback.tb_lineno)
+    print ("[%s:%d]") % (traceback.tb_frame.f_code.co_filename, traceback.tb_lineno)
 
 # convert ascii to string
 def prettify(IP_string):
@@ -131,6 +240,19 @@ def prettify(IP_string):
 # convert ascii to integer
 def int_prettify(int_string):
     return int(''.join('%d' % ord(b) for b in int_string))
+
+# convert actual integer value (32bit)
+def int_value(int_string,bit):
+    if(bit >= 8):
+        index = bit/8 -1
+    else:
+        index = bit/8
+    value = 0
+    for b in int_string:
+        value += ord(b)*(256**index)
+        index -= 1
+
+    return value
 
 def main(p4info_file_path, bmv2_file_path):
     # Instantiate a P4Runtime helper from the p4info file
@@ -281,7 +403,7 @@ def main(p4info_file_path, bmv2_file_path):
                                        bmv2_json_file_path=bmv2_file_path)
         s17.SetForwardingPipelineConfig(p4info=p4info_helper.p4info,
                                        bmv2_json_file_path=bmv2_file_path)
-        print "Installed P4 Program using SetForwardingPipelineConfig on s1 - s17"
+        print ("Installed P4 Program using SetForwardingPipelineConfig on s1 - s17")
 
         # Write the forwarding rules
         # from switch to host
@@ -312,7 +434,7 @@ def main(p4info_file_path, bmv2_file_path):
         writeTunnelForwardRules(p4info_helper,ingress_sw=s1,port=2,dst_ip_addr="11.0.0.0",prefix=8)
 
         # s2
-        writeTunnelForwardRules(p4info_helper,ingress_sw=s2,port=1,dst_ip_addr="10.0.0.0",prefix=8)
+        #writeTunnelForwardRules(p4info_helper,ingress_sw=s2,port=1,dst_ip_addr="10.0.0.0",prefix=8)
         writeTunnelForwardRules(p4info_helper,ingress_sw=s2,port=2,dst_ip_addr="11.0.0.0",prefix=16)
         writeTunnelForwardRules(p4info_helper,ingress_sw=s2,port=3,dst_ip_addr="11.1.0.0",prefix=16)
         writeTunnelForwardRules(p4info_helper,ingress_sw=s2,port=4,dst_ip_addr="11.2.0.0",prefix=16)
@@ -362,61 +484,87 @@ def main(p4info_file_path, bmv2_file_path):
         writeTunnelForwardRules(p4info_helper,ingress_sw=s17,port=1,dst_ip_addr="10.0.0.0",prefix=8)
         writeTunnelForwardRules(p4info_helper,ingress_sw=s17,port=2,dst_ip_addr="11.0.0.0",prefix=8)
 
-        # test digest
-        SendDigestEntry(p4info_helper,sw=s1,digest_name="debug_digest")
-        SendDigestEntry(p4info_helper,sw=s1,digest_name="check_digest")
-        #SendDigestEntry(p4info_helper,sw=s2,digest_name="syn_ack_digest")
+        # authentication
+        cookie_list = []
+        for i in range(16):
+            for j in range(16):
+                keyNum = random.randint(0,2147483647)
+                cookie_list.append(keyNum)
+                writeSecretNumberRule(p4info_helper,ingress_sw=s2,src_ip_addr=i*256,port=j*16,key=keyNum)
+        print ("Install authentication rule on s2")
 
-        blacklist = []
+        # digest
+        # insert pinhole
+        SendDigestEntry(p4info_helper,sw=s2,digest_name="auth_digest")
+        # abnormal pinhole
+        SendDigestEntry(p4info_helper,sw=s2,digest_name="abnormal_digest")
 
         while True:
-            digests = s1.DigestList()
-            print digests
+            print ("=========================================")
+            digests = s2.DigestList()
+            #print digests
+            # digest
             if digests.WhichOneof("update") == "digest":
                 digest = digests.digest
                 digest_name = p4info_helper.get_digests_name(digest.digest_id)
-                if digest_name == "debug_digest":
+
+                if digest_name == "auth_digest":
                     srcIP = prettify(digest.data[0].struct.members[0].bitstring)
-                    dstIP = prettify(digest.data[0].struct.members[1].bitstring)
-                    PORT = int_prettify(digest.data[0].struct.members[2].bitstring)
-                    TIMESTAMP = int_prettify(digest.data[0].struct.members[3].bitstring)
-                    print "digest name: ", digest_name
-                    print "get syn digest data: src_IP=",srcIP
-                    print "get syn digest data: dst_IP=",dstIP
-                    print "get syn digest data: ingress port=",PORT
-                    print "get syn digest data: timestamp=",TIMESTAMP
-                    print "=========================================="
-                    # if "11.0.0.1" not in blacklist:
-                    #     blacklist.append("11.0.0.1")
-                    #     writeDropForwardRules(p4info_helper,ingress_sw=s6,port=2)
-                elif digest_name == "check_digest":
-                    dstIP = prettify(digest.data[0].struct.members[0].bitstring)
-                    print "digest name: ", digest_name
-                    print "get syn digest data: dst_IP=",dstIP
-                    print "=========================================="
-
-                
+                    srcPORT = int_value(digest.data[0].struct.members[1].bitstring,16)
+                    print ("[auth-success]")
+                    # write pinhole
+                    writePinholeRule(p4info_helper,ingress_sw=s2,src_ip_addr=srcIP,src_tcp_port=srcPORT,
+                                    dst_ip_addr="10.0.1.1",dst_tcp_port=5001,egress_port=1)
                     
-                
-            
+                    prefix16 = srcIP.replace('.','+',1).split('.')[0].replace('+','.')
+                    if(prefix16 == "11.0"):
+                        writePinholeRule(p4info_helper,ingress_sw=s2,src_ip_addr="10.0.1.1",src_tcp_port=5001,
+                                    dst_ip_addr=srcIP,dst_tcp_port=srcPORT,egress_port=2)
+                    elif(prefix16 == "11.1"):
+                        writePinholeRule(p4info_helper,ingress_sw=s2,src_ip_addr="10.0.1.1",src_tcp_port=5001,
+                                    dst_ip_addr=srcIP,dst_tcp_port=srcPORT,egress_port=3)
+                    elif(prefix16 == "11.2"):
+                        writePinholeRule(p4info_helper,ingress_sw=s2,src_ip_addr="10.0.1.1",src_tcp_port=5001,
+                                    dst_ip_addr=srcIP,dst_tcp_port=srcPORT,egress_port=4)
+                    
+                elif digest_name == "abnormal_digest":
+                    srcIP = prettify(digest.data[0].struct.members[0].bitstring)
+                    srcPORT = int_value(digest.data[0].struct.members[1].bitstring,16)
+                    print ("[abnormal]")
+                    # delete pinhole
+                    deletePinholeRule(p4info_helper,ingress_sw=s2,src_ip_addr=srcIP,src_tcp_port=srcPORT,
+                                    dst_ip_addr="10.0.1.1",dst_tcp_port=5001)
+                    
+                    deletePinholeRule(p4info_helper,ingress_sw=s2,src_ip_addr="10.0.1.1",src_tcp_port=5001,
+                                    dst_ip_addr=srcIP,dst_tcp_port=srcPORT)
+                    
+                    # write into blacklist
+                    writeDropForwardRules(p4info_helper,ingress_sw=s2,src_ip_addr=srcIP,src_tcp_port=srcPORT)
+                    # update cookie
+                    ip_index = int(srcIP.split('.')[2])%16
+                    port_index = int(srcPORT%256/16)
+                    new_key = random.randint(0,2147483647)
+                    deleteSecretNumberRule(p4info_helper,ingress_sw=s2,
+                                            src_ip_addr=ip_index*256,port=port_index*16,key=cookie_list[ip_index*16+port_index])
+                    writeSecretNumberRule(p4info_helper,ingress_sw=s2,src_ip_addr=ip_index*256,port=port_index*16,key=new_key)
+                    print("[update-cookie]")
+                    print("Update new authentication rule on s2 **.**.*%s.**:**%s*") % (ip_index,port_index)
 
-
-
-        # TODO Uncomment the following two lines to read table entries from s1 and s2
-        # readTableRules(p4info_helper, s2)
-        # readTableRules(p4info_helper, s1)
-
-        # Print the tunnel counters every 2 seconds
-        # while True:
-        #     sleep(2)
-        #     print '\n----- Reading tunnel counters -----'
-        #     printCounter(p4info_helper, s1, "MyIngress.ingressTunnelCounter", 100)
-        #     printCounter(p4info_helper, s2, "MyIngress.egressTunnelCounter", 100)
-        #     printCounter(p4info_helper, s2, "MyIngress.ingressTunnelCounter", 200)
-        #     printCounter(p4info_helper, s1, "MyIngress.egressTunnelCounter", 200)
+            # timeout notification
+            elif digests.WhichOneof("update") == "idle_timeout_notification":
+                print ("[table-entry timeout]")
+                notification = digests.idle_timeout_notification
+                for entry in notification.table_entry:
+                    srcIP = prettify(entry.match[0].exact.value)
+                    srcPort = int_value(entry.match[1].exact.value,16) 
+                    dstIP = prettify(entry.match[2].exact.value) 
+                    dstPort = int_value(entry.match[3].exact.value,16) 
+                    # delete pinhole
+                    deletePinholeRule(p4info_helper,ingress_sw=s2,src_ip_addr=srcIP,src_tcp_port=srcPort,
+                                    dst_ip_addr=dstIP,dst_tcp_port=dstPort)
 
     except KeyboardInterrupt:
-        print " Shutting down."
+        print (" Shutting down.")
     except grpc.RpcError as e:
         printGrpcError(e)
 
@@ -434,10 +582,10 @@ if __name__ == '__main__':
 
     if not os.path.exists(args.p4info):
         parser.print_help()
-        print "\np4info file not found: %s\nHave you run 'make'?" % args.p4info
+        print ("\np4info file not found: %s\nHave you run 'make'?") % args.p4info
         parser.exit(1)
     if not os.path.exists(args.bmv2_json):
         parser.print_help()
-        print "\nBMv2 JSON file not found: %s\nHave you run 'make'?" % args.bmv2_json
+        print ("\nBMv2 JSON file not found: %s\nHave you run 'make'?") % args.bmv2_json
         parser.exit(1)
     main(args.p4info, args.bmv2_json)
