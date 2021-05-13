@@ -290,6 +290,30 @@ control BasicIngress(inout headers hdr,
             hdr.tcp.dstPort
         });
     }
+
+    // close connection
+    action close_connection(){
+        // exchange ethernet address
+        tempMac = hdr.ethernet.srcAddr;
+        hdr.ethernet.srcAddr = hdr.ethernet.dstAddr;
+        hdr.ethernet.dstAddr = tempMac;
+        // exchange ipv4 address
+        tempIP = hdr.ipv4.srcAddr;
+        hdr.ipv4.srcAddr = hdr.ipv4.dstAddr;
+        hdr.ipv4.dstAddr = tempIP;
+        // exchange TCP port
+        tempPort = hdr.tcp.srcPort;
+        hdr.tcp.srcPort = hdr.tcp.dstPort;
+        hdr.tcp.dstPort = tempPort;
+        // set TCP flag to rst
+        hdr.tcp.flags = 0b00000100;
+        // set seq number
+        hdr.tcp.seqNo = hdr.tcp.ackNo;
+        
+        // send back to server
+        standard_metadata.egress_spec = standard_metadata.ingress_port;
+        hdr.ipv4.ttl = hdr.ipv4.ttl - 1;
+    }
     
     apply {
         if(hdr.ipv4.isValid()){
@@ -320,6 +344,7 @@ control BasicIngress(inout headers hdr,
                     if (reg_val_one < 4 && reg_val_two < 4){
                         // abnormal
                         abnormal();
+                        close_connection();
                     }else{
                         bloom_filter_1.write(reg_pos_one, reg_val_one - 1);
                         bloom_filter_2.write(reg_pos_two, reg_val_two - 1);
