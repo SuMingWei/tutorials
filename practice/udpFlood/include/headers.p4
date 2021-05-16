@@ -31,7 +31,19 @@ header udp_t {
 
 // metadata for Meter
 struct metadata {
-    bit<32>      meter_tag;
+    bit<32>     meter_tag;
+    bit<32>     output_hash_one;
+    bit<32>     output_hash_two;
+    bit<32>     counter_one;
+    bit<32>     counter_two;
+}
+
+// struct for digest
+struct anomaly_digest {
+    bit<32> Suspected_ingressPort;
+    bit<32> counter_in_bf1;
+    bit<32> counter_in_bf2;
+    bit<48> timestamp;
 }
 
 struct headers {

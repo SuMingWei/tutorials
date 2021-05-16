@@ -21,3 +21,8 @@ const bit<32> METER_RED     = 2;
 /* Meter const */
 #define MAX_PORT 20
 #define TABLE_SIZE 1023
+#define MAX_PACKET_THRESHOLD 1000
+// register length, influence the false positive (0.000946594 for n = #_of_{port} = 1, m = 64, k = #_of_(hash) = 2 )
+#define BLOOM_FILTER_ENTRIES 64
+// each port can stored max number is 2^32-1
+#define BLOOM_FILTER_BIT_WIDTH 32

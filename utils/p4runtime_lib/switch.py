@@ -78,7 +78,6 @@ class SwitchConnection(object):
 
         config.p4info.CopyFrom(p4info)
         config.p4_device_config = device_config.SerializeToString()
-
         request.action = p4runtime_pb2.SetForwardingPipelineConfigRequest.VERIFY_AND_COMMIT
         if dry_run:
             print "P4Runtime SetForwardingPipelineConfig:", request
@@ -145,7 +144,41 @@ class SwitchConnection(object):
         else:
             self.client_stub.Write(request)
 
-    def WriteMeter(self, meter_id, index, cir, pir, dry_run=False):
+    # Digest 
+    def WriteDigestEntry(self, digest_entry, dry_run=False):
+        request = p4runtime_pb2.WriteRequest()
+        request.device_id = self.device_id 
+        request.election_id.low = 1
+        update = request.updates.add()
+        update.type = p4runtime_pb2.Update.INSERT
+        update.entity.digest_entry.CopyFrom(digest_entry)
+
+        if dry_run: 
+            print "P4Runtime write DigestEntry: ", request 
+        else: 
+            self.client_stub.Write(request)
+
+    def DigestListAck(self, digest_ack, dry_run=False, **kwargs):
+        request = p4runtime_pb2.StreamMessageRequest()
+        request.digest_ack.CopyFrom(digest_ack)
+        if dry_run: 
+            print "P4 Runtime DigestListAck: ", request 
+        else:
+            self.requests_stream.put(request)
+            for item in self.stream_msg_resp:
+                return item 
+
+    def DigestList(self, dry_run=False, **kwargs):
+        request = p4runtime_pb2.StreamMessageRequest()
+        if dry_run:
+            print "P4 Runtime DigestList Response: ", request 
+        else: 
+            self.requests_stream.put(request)
+            for item in self.stream_msg_resp:
+                return item 
+
+    # Meter
+    def WriteMeters(self, meter_id, index, cir, pir, dry_run=False):
         request = p4runtime_pb2.WriteRequest()
         request.device_id = self.device_id
         request.election_id.low = 1
@@ -154,15 +187,63 @@ class SwitchConnection(object):
         meter_entry = update.entity.meter_entry
         meter_entry.meter_id = meter_id
         meter_entry.index.index = index
-        meter_entry.config.cir = cir*10
-        meter_entry.config.pir = pir*10
-        meter_entry.config.cburst = 1500
-        meter_entry.config.pburst = 1500
+        meter_entry.config.cir = cir
+        meter_entry.config.pir = pir
+        meter_entry.config.cburst = 1
+        meter_entry.config.pburst = 1
+        print(meter_entry)
+        if dry_run:
+            print "P4Runtime Write:", request
+        else:
+            self.client_stub.Write(request)
+
+    def ReadMeters(self, meter_id, index, dry_run=False):
+        request = p4runtime_pb2.ReadRequest()
+        request.device_id = self.device_id
+        entity = request.entities.add()
+        meter_entry = entity.meter_entry
+        meter_entry.meter_id = meter_id
+        meter_entry.index.index = index
+        if dry_run:
+            print "P4Runtime Read:", request
+        else:
+            for response in self.client_stub.Read(request):
+                yield response
+
+    # Register
+    def ResetRegisters(self, register_id, index, dry_run=False):
+        request = p4runtime_pb2.WriteRequest()
+        request.device_id = self.device_id
+        request.election_id.low = 1
+        update = request.updates.add()
+        update.type = p4runtime_pb2.Update.MODIFY
+        register_entry = update.entity.register_entry
+        register_entry.register_id = register_id
+        register_entry.index.index = index
+        print(register_entry)
         if dry_run:
             print "P4Runtime Write:", request
         else:
             self.client_stub.Write(request)
         
+    def ReadRegister(self, register_id=None, index=None, dry_run=False):
+        request = p4runtime_pb2.ReadRequest()
+        request.device_id = self.device_id 
+        entity = request.entities.add()
+        register_entry = entity.register_entry 
+
+        if register_id is not None:
+            register_entry.register_id = register_id
+        else:
+            register_entry.register_id = 0
+        if index is not None:
+            register_entry.index.index = index
+        if dry_run:
+            print "P4Runtime Read Register: ", request 
+        else:
+            for response in self.client_stub.Read(request):
+                yield response 
+
 
 class GrpcRequestLogger(grpc.UnaryUnaryClientInterceptor,
                         grpc.UnaryStreamClientInterceptor):

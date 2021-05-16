@@ -56,15 +56,19 @@ control MyIngress(
     inout metadata meta, 
     inout standard_metadata_t standard_metadata
 ) {
+    // Register
+    //      allocates storage for 64 values, each with type bit<32>.
+    register<bit<BLOOM_FILTER_BIT_WIDTH>>(BLOOM_FILTER_ENTRIES) bloom_filter_1;
+    register<bit<BLOOM_FILTER_BIT_WIDTH>>(BLOOM_FILTER_ENTRIES) bloom_filter_2;
     // Counter
     counter((bit<32>)MAX_PORT+1, CounterType.bytes) ingressPortCounter;
     // Meter
     meter((MAX_PORT+1), MeterType.packets) my_meter;
+    
     // action
     action drop() {
         mark_to_drop(standard_metadata);
     }
-    
     action ipv4_forward(macAddr_t dstAddr, egressSpec_t port) {
         // Sets the egress port for the next hop
         standard_metadata.egress_spec = port;
@@ -80,6 +84,35 @@ control MyIngress(
     }      
     action ingress_meter_action(){
         my_meter.execute_meter((bit<32>)standard_metadata.ingress_port, meta.meter_tag);
+    }
+    action anomaly_traffic_digest(){
+        digest<anomaly_digest>((bit<32>)1024,{
+            (bit<32>)standard_metadata.ingress_port,
+            meta.counter_one,
+            meta.counter_two,
+            standard_metadata.ingress_global_timestamp
+        });
+    }
+    action update_bloom_filter(){
+       //Get register position
+       hash(
+           meta.output_hash_one, HashAlgorithm.crc16, (bit<16>)0, {standard_metadata.ingress_port}, (bit<32>)BLOOM_FILTER_ENTRIES
+        );
+
+       hash(
+           meta.output_hash_two, HashAlgorithm.crc32, (bit<16>)0, {standard_metadata.ingress_port}, (bit<32>)BLOOM_FILTER_ENTRIES
+        );
+
+        //Read counters
+        bloom_filter_1.read(meta.counter_one, meta.output_hash_one);
+        bloom_filter_2.read(meta.counter_two, meta.output_hash_two);
+
+        meta.counter_one = meta.counter_one + 1;
+        meta.counter_two = meta.counter_two + 1;
+
+        //write counters
+        bloom_filter_1.write(meta.output_hash_one, meta.counter_one);
+        bloom_filter_2.write(meta.output_hash_two, meta.counter_two);
     }
 
     // tables
@@ -129,8 +162,13 @@ control MyIngress(
         if (hdr.ipv4.isValid()) {
             // apply table
             ipv4_lpm.apply();
+            // test digest
             if(hdr.udp.isValid()){
                 // m_table.apply();
+                update_bloom_filter();
+                if(meta.counter_one >= MAX_PACKET_THRESHOLD && meta.counter_two >= MAX_PACKET_THRESHOLD){
+                    anomaly_traffic_digest();
+                }
                 ingressPortCounter.count((bit<32>)standard_metadata.ingress_port);
                 ingress_meter_action();
                 color_action.apply();
