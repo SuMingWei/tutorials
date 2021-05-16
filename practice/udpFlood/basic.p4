@@ -56,15 +56,17 @@ control MyIngress(
     inout metadata meta, 
     inout standard_metadata_t standard_metadata
 ) {
-    // Register
+    // Register for Flow info
     //      allocates storage for 64 values, each with type bit<32>.
     register<bit<BLOOM_FILTER_BIT_WIDTH>>(BLOOM_FILTER_ENTRIES) bloom_filter_1;
     register<bit<BLOOM_FILTER_BIT_WIDTH>>(BLOOM_FILTER_ENTRIES) bloom_filter_2;
+    // Register for time
+    register<bit<48>>(1) timestamp_reg;
     // Counter
     counter((bit<32>)MAX_PORT+1, CounterType.bytes) ingressPortCounter;
     // Meter
     meter((MAX_PORT+1), MeterType.packets) my_meter;
-    
+
     // action
     action drop() {
         mark_to_drop(standard_metadata);
@@ -92,6 +94,15 @@ control MyIngress(
             meta.counter_two,
             standard_metadata.ingress_global_timestamp
         });
+    }
+    action read_timestamp(){
+        meta.cur_timestamp = standard_metadata.ingress_global_timestamp;
+        timestamp_reg.read(meta.last_timestamp, 1);
+    }
+    action reset_register(){
+        // reset registers
+        bloom_filter_1.write(meta.output_hash_one, 0);
+        bloom_filter_2.write(meta.output_hash_two, 0);
     }
     action update_bloom_filter(){
        //Get register position
@@ -162,12 +173,18 @@ control MyIngress(
         if (hdr.ipv4.isValid()) {
             // apply table
             ipv4_lpm.apply();
-            // test digest
+
             if(hdr.udp.isValid()){
-                // m_table.apply();
                 update_bloom_filter();
+                // calculate time
+                read_timestamp();
+                // digest
                 if(meta.counter_one >= MAX_PACKET_THRESHOLD && meta.counter_two >= MAX_PACKET_THRESHOLD){
                     anomaly_traffic_digest();
+                }
+                // reset register
+                if(meta.cur_timestamp - meta.last_timestamp >= 1000000){
+                    reset_register();
                 }
                 ingressPortCounter.count((bit<32>)standard_metadata.ingress_port);
                 ingress_meter_action();

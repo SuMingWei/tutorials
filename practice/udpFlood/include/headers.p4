@@ -36,6 +36,9 @@ struct metadata {
     bit<32>     output_hash_two;
     bit<32>     counter_one;
     bit<32>     counter_two;
+    // time calculation
+    bit<48> cur_timestamp;
+    bit<48> last_timestamp;
 }
 
 // struct for digest
