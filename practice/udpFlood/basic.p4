@@ -56,18 +56,37 @@ control MyIngress(
     inout metadata meta, 
     inout standard_metadata_t standard_metadata
 ) {
-    // Register for Flow info
-    //      allocates storage for 64 values, each with type bit<32>.
-    register<bit<BLOOM_FILTER_BIT_WIDTH>>(BLOOM_FILTER_ENTRIES) bloom_filter_1;
-    register<bit<BLOOM_FILTER_BIT_WIDTH>>(BLOOM_FILTER_ENTRIES) bloom_filter_2;
-    // Register for time
+    bit<1>value;
+    bit<5>ActivePorts;
+    /* 
+        Register for Flow info 
+            allocates storage for 64 values, each with type bit<32>.
+    */
+    register<bit<REGISTER_WIDTH>>(REGISTER_ENTRIES) reg;
+    /* 
+        Register for record number of active port
+    */
+    register<bit<1>>(MAX_PORT+1) active_port;
+    register<bit<5>>(1) num_active_ports;
+    /* 
+        Register for time
+    */
     register<bit<48>>(1) timestamp_reg;
     // Counter
     counter((bit<32>)MAX_PORT+1, CounterType.bytes) ingressPortCounter;
+    // Counter
+    counter((bit<32>)1, CounterType.bytes) MonitorCounter;
     // Meter
     meter((MAX_PORT+1), MeterType.packets) my_meter;
 
     // action
+    action anomaly_traffic_digest(){
+        num_active_ports.read(ActivePorts, 0);
+        digest<anomaly_digest>((bit<32>)1024,{
+            (bit<32>)standard_metadata.ingress_port,
+            standard_metadata.ingress_global_timestamp
+        });
+    }
     action drop() {
         mark_to_drop(standard_metadata);
     }
@@ -84,46 +103,49 @@ control MyIngress(
     action m_action(bit<32> meter_idx) {
         my_meter.execute_meter((bit<32>)meter_idx, meta.meter_tag);
     }      
-    action ingress_meter_action(){
-        my_meter.execute_meter((bit<32>)standard_metadata.ingress_port, meta.meter_tag);
-    }
-    action anomaly_traffic_digest(){
-        digest<anomaly_digest>((bit<32>)1024,{
-            (bit<32>)standard_metadata.ingress_port,
-            meta.counter_one,
-            meta.counter_two,
-            standard_metadata.ingress_global_timestamp
-        });
-    }
     action read_timestamp(){
         meta.cur_timestamp = standard_metadata.ingress_global_timestamp;
-        timestamp_reg.read(meta.last_timestamp, 1);
+        timestamp_reg.read(meta.last_timestamp, 0);
+    }
+    action update_flow_in_reg(){
+        reg.read(meta.reg_data, (bit<32>)standard_metadata.ingress_port);
+        meta.reg_data = meta.reg_data + 1;
+        reg.write((bit<32>)standard_metadata.ingress_port, meta.reg_data);
+
+        active_port.read(value, (bit<32>)standard_metadata.ingress_port);
+        active_port.write((bit<32>)standard_metadata.ingress_port, 1);
+    }
+    action count_active_port(){
+        num_active_ports.read(ActivePorts, 0);
+        ActivePorts = ActivePorts + 1;
+        num_active_ports.write(0, ActivePorts);
+    }
+    action write_timestamp(){
+        timestamp_reg.write(0, standard_metadata.ingress_global_timestamp);
     }
     action reset_register(){
         // reset registers
-        bloom_filter_1.write(meta.output_hash_one, 0);
-        bloom_filter_2.write(meta.output_hash_two, 0);
+        reg.write((bit<32>)standard_metadata.ingress_port, 0);
+        active_port.write((bit<32>)0, 0);
+        active_port.write((bit<32>)1, 0);
+        active_port.write((bit<32>)2, 0);
+        active_port.write((bit<32>)3, 0);
+        active_port.write((bit<32>)4, 0);
+        active_port.write((bit<32>)5, 0);
+        active_port.write((bit<32>)6, 0);
+        active_port.write((bit<32>)7, 0);
+        active_port.write((bit<32>)8, 0);
+        active_port.write((bit<32>)9, 0);
+        active_port.write((bit<32>)10, 0);
+        active_port.write((bit<32>)11, 0);
+        active_port.write((bit<32>)12, 0);
+        active_port.write((bit<32>)13, 0);
+        active_port.write((bit<32>)14, 0);
+        active_port.write((bit<32>)15, 0);
+        num_active_ports.write(0, 0);
     }
-    action update_bloom_filter(){
-       //Get register position
-       hash(
-           meta.output_hash_one, HashAlgorithm.crc16, (bit<16>)0, {standard_metadata.ingress_port}, (bit<32>)BLOOM_FILTER_ENTRIES
-        );
-
-       hash(
-           meta.output_hash_two, HashAlgorithm.crc32, (bit<16>)0, {standard_metadata.ingress_port}, (bit<32>)BLOOM_FILTER_ENTRIES
-        );
-
-        //Read counters
-        bloom_filter_1.read(meta.counter_one, meta.output_hash_one);
-        bloom_filter_2.read(meta.counter_two, meta.output_hash_two);
-
-        meta.counter_one = meta.counter_one + 1;
-        meta.counter_two = meta.counter_two + 1;
-
-        //write counters
-        bloom_filter_1.write(meta.output_hash_one, meta.counter_one);
-        bloom_filter_2.write(meta.output_hash_two, meta.counter_two);
+    action ingress_meter_action(){
+        my_meter.execute_meter((bit<32>)standard_metadata.ingress_port, meta.meter_tag);
     }
 
     // tables
@@ -171,22 +193,35 @@ control MyIngress(
     apply {
         // only if the header ipv4 is valid
         if (hdr.ipv4.isValid()) {
-            // apply table
             ipv4_lpm.apply();
 
             if(hdr.udp.isValid()){
-                update_bloom_filter();
+                update_flow_in_reg();
+                if(value == 0){
+                    count_active_port();
+                }
                 // calculate time
                 read_timestamp();
-                // digest
-                if(meta.counter_one >= MAX_PACKET_THRESHOLD && meta.counter_two >= MAX_PACKET_THRESHOLD){
+
+                // if flow traffic is suspected( >=MAX_PACKET_THRESHOLD ), digest to controller
+                if(meta.reg_data >= MAX_PACKET_THRESHOLD){
                     anomaly_traffic_digest();
+                    reset_register();
                 }
-                // reset register
+
+                // if time delta >= 1s,  reset register
                 if(meta.cur_timestamp - meta.last_timestamp >= 1000000){
                     reset_register();
                 }
+                write_timestamp();
+
+                // Counter
                 ingressPortCounter.count((bit<32>)standard_metadata.ingress_port);
+                // Counter for Monitor h2 Traffic on s1
+                if(hdr.ipv4.srcAddr != 0x0b030601 && standard_metadata.ingress_port == 2){
+                    MonitorCounter.count(0);
+                }
+                // Meter
                 ingress_meter_action();
                 color_action.apply();
             }

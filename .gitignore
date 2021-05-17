@@ -38,3 +38,7 @@ topo_port.png
 # redunt file
 vm/.#user-bootstrap.sh
 vm/4913
+
+# Result file
+*.txt
+*.png

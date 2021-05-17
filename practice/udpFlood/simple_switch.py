@@ -47,6 +47,140 @@ class simple_switch_cli:
     def get_register_value(self, register_name, register_index):
         reg = self.console().communicate("register_read %s %s"%(register_name, register_index))[0]
         return(reg)
+'''
+    Monitor for data
+'''
+cli = []
+cli.append(simple_switch_cli(0))
+for i in range(15):
+    cli.append(simple_switch_cli(i+9090))
+# 設定Server-side的Detection用Meter
+print("[+] Setting Meter Server Bandwidth...")
+cli_3 = cli[3]
+# 設為0.000005時是 40 kbits/sec, 200*0.000005時為最高 8 Mbits/sec
+# | green -4M+ yellow -8M+ red |
+Server_Bandwidth = 200
+# Server_Max_Egress_Port = 20
+# for i in range(Server_Max_Egress_Port+1):
+#     cli[3].set_meter_rate("my_meter", i, "{}:1".format(0.0000025*Server_Bandwidth), "{}:1".format(0.000005*Server_Bandwidth))
+print("[+] Start Monitor on s1 for h2...")
+cli = simple_switch_cli(9090)
+MONITOR_PORT = 2
+out_data = []
+cur_byte = 0
+last_byte = 0
+last_time_stamp_ms = 0
+cur_time_stamp_ms = 0
+time_diff = 0
+byte_diff = 0
+for i in range(0,5):
+    print("======== {} START ===========".format(i))
+    cur_time_stamp_ms = int(time.time()*1000.0)
+    counter_text = cli.read_counter("MonitorCounter", 0).split()
+    bytes_string = re.split("[(=)]",counter_text[15])
+    cur_byte = int(bytes_string[1])
+    if i == 0:
+        time_diff = cur_time_stamp_ms
+        byte_diff = cur_byte
+    else:
+        time_diff = (cur_time_stamp_ms - last_time_stamp_ms)
+        byte_diff = cur_byte - last_byte
+    bandwidth = byte_diff/time_diff
+    print(byte_diff, time_diff, bandwidth)
+    print("Bandwidth : {} (bits/sec)".format(bandwidth*8))
+    last_time_stamp_ms = cur_time_stamp_ms
+    last_byte = cur_byte
+    out_data.append((bandwidth*8.0)/1024.0)
+    time.sleep(1)
+    print("==========  END  ===========")
+print(len(out_data))
+tmp = raw_input()
+cli_3.set_meter_rate("my_meter", 15, "{}:1".format(0.000001*Server_Bandwidth), "{}:1".format(0.0000025*Server_Bandwidth))
+cli_3.set_meter_rate("my_meter", 6, "{}:1".format(0.000001*Server_Bandwidth), "{}:1".format(0.0000025*Server_Bandwidth))
+# after attack do again
+for i in range(1,17):
+    print("========== START ===========")
+    cur_time_stamp_ms = int(time.time()*1000.0)
+    counter_text = cli.read_counter("MonitorCounter", 0).split()
+    bytes_string = re.split("[(=)]",counter_text[15])
+    cur_byte = int(bytes_string[1])
+    time_diff = (cur_time_stamp_ms - last_time_stamp_ms)
+    byte_diff = cur_byte - last_byte
+    bandwidth = byte_diff/time_diff
+    print(byte_diff, time_diff, bandwidth)
+    print("Bandwidth : {} (bits/sec)".format(bandwidth*8))
+    if i == 1:
+        last_time_stamp_ms = cur_time_stamp_ms
+        last_byte = cur_byte
+        time.sleep(1)
+        continue
+    last_time_stamp_ms = cur_time_stamp_ms
+    last_byte = cur_byte
+    out_data.append((bandwidth*8.0)/1024.0)
+    time.sleep(1)
+    print("==========  END  ===========")
+print(out_data)
+f = open("test.txt", "w")
+for i in out_data:
+    f.write("%f\n" % (i))
+f.close()
+exit(1)
+# # For test
+# cli = []
+# cli.append(simple_switch_cli(0))
+# for i in range(15):
+#     cli.append(simple_switch_cli(i+9090))
+# # 設定Server-side的Detection用Meter
+# print("[+] Setting Meter Server Bandwidth...")
+# # 設為0.000005時是 40 kbits/sec, 200*0.000005時為最高 8 Mbits/sec
+# # | green -4M+ yellow -8M+ red |
+# Server_Bandwidth = 200
+# Server_Max_Egress_Port = 20
+# for i in range(Server_Max_Egress_Port+1):
+#     cli[3].set_meter_rate("my_meter", i, "{}:1".format(0.0000025*Server_Bandwidth), "{}:1".format(0.000005*Server_Bandwidth))
+# cli = simple_switch_cli(9092)
+# MAX_PORT = 20
+# while True:
+#     # 獲得s3 egress時能用的Bandwidth與meter設定
+#     print("========== START ===========")
+#     start = time.time()
+
+#     rates = []
+#     CIRS = []
+#     PIRS = []
+#     CIR_BURSTS = []
+#     PIR_BURSTS = []
+#     regs = []
+#     cur_bytes = [0]*(MAX_PORT+1)
+#     for i in range(MAX_PORT+1):
+#         rates = cli.get_meter_rate("my_meter", i).split()
+#         CIR = float(rates[17][0:-1])*1000*8
+#         CIR_BURST = int(rates[21])
+#         PIR = float(rates[26][0:-1])*1000*8
+#         PIR_BURST = int(rates[30])
+#         CIRS.append(CIR)
+#         CIR_BURSTS.append(CIR_BURST)
+#         PIRS.append(PIR)
+#         PIR_BURSTS.append(PIR_BURST)
+#         reg = cli.get_register_value("reg", i).split()
+#         value = int(reg[14])
+#         regs.append(value)
+#         # 獲得ingress_port的counter值
+#         counter_text = cli.read_counter("ingressPortCounter", i)
+#         counter_text = counter_text.split()
+
+#         bytes_string = re.split("[(=)]",counter_text[15])
+#         cur_bytes[i] = int(bytes_string[1])
+#     print(CIRS)
+#     print(PIRS)
+#     # print(CIR_BURSTS)
+#     # print(PIR_BURSTS)
+#     print(cur_bytes)
+#     print(regs)
+#     end = time.time()
+#     print("執行時間：%f 秒" % (end - start))
+#     print("==========  END  ===========")
+#     # time.sleep(1)
 # ================================================ #
 # 建立 CLI list 和 TimeStamp list
 cli = []

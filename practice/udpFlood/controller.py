@@ -5,6 +5,7 @@ import grpc
 import os
 import sys
 from time import sleep
+import time
 import threading
 import subprocess
 
@@ -42,11 +43,14 @@ class simple_switch_cli:
     def read_counter(self, counter_name, counter_id):
         counter = self.console().communicate("counter_read %s %s"%(counter_name, counter_id))[0]
         return(counter)
+    def reset_counter(self, counter_name):
+        counter = self.console().communicate("counter_read %s"%(counter_name))
+        return(counter)
     def get_register_value(self, register_name, register_index):
         reg = self.console().communicate("register_read %s %s"%(register_name, register_index))[0]
         return(reg)
-    def reset_register_value(self, register_name, register_index):
-        reg = self.console().communicate("register_reset %s %s"%(register_name, register_index))
+    def reset_register_value(self, register_name):
+        reg = self.console().communicate("register_reset %s"%(register_name))
         return(reg)
 
 
@@ -236,16 +240,7 @@ def main(p4info_file_path, bmv2_file_path):
         # readTableRules(p4info_helper, s1)
         # readTableRules(p4info_helper, s2)
 
-        '''
-            write Meter Rate    :   改寫 Meter 的 rate
-            p4info_helper       :   p4info_helper file
-            sw                  :   switch name
-            meter_index         :   meter index
-            cir                 :   cir (packets/microsec)
-            pir                 :   pir (packets/microsec)
-            interval            :   ?
-        '''
-        writeMeterFlowRules(p4info_helper, s3, 15, 1, 5, 0)
+        
 
         '''
             Send Digest Entry   :   建立 digest 連線? (第一次執行時需要)
@@ -258,90 +253,120 @@ def main(p4info_file_path, bmv2_file_path):
         '''
             simple_switch_CLI
         '''
-        # s3 
+        # Main Control on s3 
         cli = simple_switch_cli(9092)
-        # Main Control
         while True:
             '''
                 Digest receive
             '''
+            print("=======  START  =======")
+            # pstart = time.process_time()
             print("----- digests -----")
             digests = s3.DigestList()
-            for digest in digests:
-                if digest.WhichOneof('update')=='digest':
-                    digest = digest.digest
-                    digest_name = p4info_helper.get_digests_name(digest.digest_id)
-                    # print(digest)
-                    '''
-                        [DigestList message的定義]
-                        message DigestList {
-                            uint32 digest_id = 1;  // identifies the digest extern instance
-                            uint64 list_id = 2;  // identifies a list of entries, used by receiver to ack
-                            // List of entries: each call to the Digest<T>::pack() method corresponds to
-                            // one entry and we can have as little as one entry.
-                            repeated P4Data data = 3;
-                            // Timestamp at which the server generated the message (in nanoseconds since
-                            // Epoch)
-                            int64 timestamp = 4;
-                        }
-                        [Digest例子]
-                        digest example
-                            digest_id: 385927609
-                            list_id: 12824
-                            data {
-                                struct {
-                                    members {
-                                        bitstring: "\000\000\000\001"
-                                    }
+            INGRESSPORT = 0
+            # for digest in digests:
+            if digests.WhichOneof('update')=='digest':
+                digest = digests.digest
+                digest_name = p4info_helper.get_digests_name(digest.digest_id)
+                # print(digest)
+                '''
+                    [DigestList message的定義]
+                    message DigestList {
+                        uint32 digest_id = 1;  // identifies the digest extern instance
+                        uint64 list_id = 2;  // identifies a list of entries, used by receiver to ack
+                        // List of entries: each call to the Digest<T>::pack() method corresponds to
+                        // one entry and we can have as little as one entry.
+                        repeated P4Data data = 3;
+                        // Timestamp at which the server generated the message (in nanoseconds since
+                        // Epoch)
+                        int64 timestamp = 4;
+                    }
+                    [Digest例子]
+                    digest example
+                        digest_id: 385927609
+                        list_id: 12824
+                        data {
+                            struct {
+                                members {
+                                    bitstring: "\000\000\000\001"
                                 }
                             }
-                            timestamp: 15620122603112
-                    '''
-                    print("digest name: {}".format(digest_name))
-                    print("digest list_id: {}".format(digest.list_id))
-                    print("get anomaly_digest data: Ingress Port = {}".format(int_prettify(digest.data[0].struct.members[0].bitstring)))
-                    print("anomaly_digest register index in bf1: {}".format(int(digest.data[0].struct.members[1].bitstring.encode('hex'),16)))
-                    print("anomaly_digest register index in bf2: {}".format(int(digest.data[0].struct.members[2].bitstring.encode('hex'),16)))
-                    # print("anomaly_digest timestamp : {}".format(int_prettify(digest.data[0].struct.members[3].bitstring)))
-                    break
+                        }
+                        timestamp: 15620122603112
+                '''
+                # print("digest name: {}".format(digest_name))
+                # print("digest list_id: {}".format(digest.list_id))
+                INGRESSPORT = int(digest.data[0].struct.members[0].bitstring.encode('hex'),16)
+                print("get anomaly_digest data: Ingress Port = {}".format(int(digest.data[0].struct.members[0].bitstring.encode('hex'),16)))
+                print("anomaly_digest timestamp in ns : {}".format(int(digest.data[0].struct.members[1].bitstring.encode('hex'),16)))
+                # break
             print("----- digests End -----")
             
-            '''
-                read Counter
-            '''
-            print('\n----- Reading counters -----')
-            printCounter(p4info_helper, s3, "MyIngress.ingressPortCounter", 15)
-            '''
-                read Meter
-            '''
-            print('\n----- Reading meters -----')
-            printMeter(p4info_helper, s3, "MyIngress.my_meter", 15)
-            print("============  End ==============")
+            start = time.time()
             # '''
-            #     read register by simple_switch_CLI
+            #     read Counter
             # '''
-            # reg = cli.get_register_value("bloom_filter_2", 15).split()
-            # value = int(reg[14])
-            # print(value)
+            # print('\n----- Reading counters -----')
+            # printCounter(p4info_helper, s3, "MyIngress.ingressPortCounter", 15)
+            # '''
+            #     read Meter
+            # '''
+            # print('\n----- Reading meters -----')
+            # printMeter(p4info_helper, s3, "MyIngress.my_meter", 15)
+            # '''
+            #     read register by simple_switch_CLI for getting num_active_ports
+            # '''
+            MAX_PORT = 20
+            activePort_index = []
+            values = []
+            egresssPort = 2
+            num_active_ports = 0
+            for i in range(MAX_PORT+1):
+                if i == egresssPort:
+                    continue
+                else:
+                    reg = cli.get_register_value("reg", i).split()
+                    value = int(reg[14])
+                    values.append(value)
+                    if value != 0:
+                        num_active_ports += 1
+                        activePort_index.append(i)
+            print("Value in reg:", values)
+            print("Active ports:", activePort_index)
+            print("Number of activer port:", num_active_ports)
             '''
-                reset Meter rate
+                write Meter Rate    :   改寫 Meter 的 rate
+                p4info_helper       :   p4info_helper file
+                sw                  :   switch name
+                meter_index         :   meter index
+                cir                 :   cir (packets/microsec)
+                pir                 :   pir (packets/microsec)
+                interval            :   ?
             '''
-            #TODO: 
-            # 1. get port number from digest 
-            # 2. get current output BW from digest
-            # 3. get numbers of `active port` on switch 
-            # 4. fair share the BW
-            reg = cli.set_meter_rate("my_meter", 15).split()
-            value = int(reg[14])
-            print(value)
+            rates = cli.get_meter_rate("my_meter", egresssPort).split()
+            CIR = float(rates[17][0:-1])*1000*8
+            CIR_BURST = int(rates[21])
+            PIR = float(rates[26][0:-1])*1000*8
+            PIR_BURST = int(rates[30])
+            # get number of active port
+            if num_active_ports != 0:
+                print(CIR/num_active_ports, PIR/num_active_ports)
+                for port in activePort_index:
+                    writeMeterFlowRules(p4info_helper, s3, port, int((CIR/num_active_ports)*125), int((PIR/num_active_ports)*125), 0)
             '''
                 reset Register
             '''
-            #TODO:
-            # 1. get port number in BF index from digest 
-            reg = cli.reset_register_value("bloom_filter_1", 15)
-            reg = cli.reset_register_value("bloom_filter_2", 15)
-            sleep(0.25)
+            if num_active_ports != 0:
+                # reg = cli.reset_counter("ingressPortCounter")
+                reg = cli.reset_register_value("num_active_ports")
+                reg = cli.reset_register_value("reg")
+                reg = cli.reset_register_value("active_port")
+            end = time.time()
+            # pend = time.process_time()
+            print("執行時間：%f 秒" % (end - start))
+            # print("執行時間：%f 秒" % (pend - pstart))
+            print("=======  End  =======")
+            # sleep(0.25)
 
     except KeyboardInterrupt:
         print(" Shutting down.")

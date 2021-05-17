@@ -191,7 +191,7 @@ class SwitchConnection(object):
         meter_entry.config.pir = pir
         meter_entry.config.cburst = 1
         meter_entry.config.pburst = 1
-        print(meter_entry)
+        # print(meter_entry) 
         if dry_run:
             print "P4Runtime Write:", request
         else:
