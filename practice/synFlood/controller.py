@@ -52,18 +52,43 @@ def writeTunnelForwardRules(p4info_helper,ingress_sw,port,dst_ip_addr,prefix):
     print ("Install host ingress tunnel rule on %s") % ingress_sw.name
 
 # drop packet
-def writeDropForwardRules(p4info_helper,ingress_sw,src_ip_addr,src_tcp_port):
+def writeDropForwardRules(p4info_helper,ingress_sw,src_ip_addr,src_tcp_port,TTL):
+    if TTL == -1:
+        table_entry = p4info_helper.buildTableEntry(
+            table_name = "BasicIngress.drop_blacklist",
+            match_fields = {
+                "hdr.ipv4.srcAddr":(src_ip_addr,32),
+                "hdr.tcp.srcPort":src_tcp_port
+            },
+            action_name = "BasicIngress.drop"
+        )
+    else:
+        table_entry = p4info_helper.buildTableEntry(
+            table_name = "BasicIngress.drop_blacklist",
+            match_fields = {
+                "hdr.ipv4.srcAddr":(src_ip_addr,32),
+                "hdr.tcp.srcPort":src_tcp_port
+            },
+            action_name = "BasicIngress.drop",
+            timeout=TTL
+        )
+    # write into ingress of target switch
+    ingress_sw.WriteTableEntry(table_entry)
+    print ("Install drop rule on %s:%s") % (src_ip_addr,src_tcp_port)
+
+# delete drop packet
+def deleteDropForwardRules(p4info_helper,ingress_sw,src_ip_addr,src_tcp_port):
     table_entry = p4info_helper.buildTableEntry(
         table_name = "BasicIngress.drop_blacklist",
         match_fields = {
             "hdr.ipv4.srcAddr":(src_ip_addr,32),
             "hdr.tcp.srcPort":src_tcp_port
         },
-        action_name = "BasicIngress.drop",
+        action_name = "BasicIngress.drop"
     )
     # write into ingress of target switch
-    ingress_sw.WriteTableEntry(table_entry)
-    print ("Install drop rule on %s:%s") % (src_ip_addr,src_tcp_port)
+    ingress_sw.DeleteTableEntry(table_entry)
+    print ("Delete drop rule on %s:%s") % (src_ip_addr,src_tcp_port)
 
 # insert secret key
 def writeSecretNumberRule(p4info_helper,ingress_sw,src_ip_addr,port,key):
@@ -499,10 +524,11 @@ def main(p4info_file_path, bmv2_file_path):
         # abnormal pinhole
         SendDigestEntry(p4info_helper,sw=s2,digest_name="abnormal_digest")
 
+        blacklist = []
         while True:
             print ("=========================================")
             digests = s2.DigestList()
-            #print digests
+            # print (digests)
             # digest
             if digests.WhichOneof("update") == "digest":
                 digest = digests.digest
@@ -539,29 +565,44 @@ def main(p4info_file_path, bmv2_file_path):
                                     dst_ip_addr=srcIP,dst_tcp_port=srcPORT)
                     
                     # write into blacklist
-                    writeDropForwardRules(p4info_helper,ingress_sw=s2,src_ip_addr=srcIP,src_tcp_port=srcPORT)
-                    # update cookie
-                    ip_index = int(srcIP.split('.')[2])%16
-                    port_index = int(srcPORT%256/16)
-                    new_key = random.randint(0,2147483647)
-                    deleteSecretNumberRule(p4info_helper,ingress_sw=s2,
-                                            src_ip_addr=ip_index*256,port=port_index*16,key=cookie_list[ip_index*16+port_index])
-                    writeSecretNumberRule(p4info_helper,ingress_sw=s2,src_ip_addr=ip_index*256,port=port_index*16,key=new_key)
-                    print("[update-cookie]")
-                    print("Update new authentication rule on s2 **.**.*%s.**:**%s*") % (ip_index,port_index)
+                    danger = srcIP + ":" + str(srcPORT)
+                    if danger in blacklist:
+                        writeDropForwardRules(p4info_helper,ingress_sw=s2,src_ip_addr=srcIP,src_tcp_port=srcPORT,
+                                            TTL=-1) # no timeout (forever)
+                    else:
+                        blacklist.append(danger)    
+                        writeDropForwardRules(p4info_helper,ingress_sw=s2,src_ip_addr=srcIP,src_tcp_port=srcPORT,
+                                            TTL=600000000000) # 10 min
+                    # # update cookie
+                    # ip_index = int(srcIP.split('.')[2])%16
+                    # port_index = int(srcPORT%256/16)
+                    # new_key = random.randint(0,2147483647)
+                    # deleteSecretNumberRule(p4info_helper,ingress_sw=s2,
+                    #                         src_ip_addr=ip_index*256,port=port_index*16,key=cookie_list[ip_index*16+port_index])
+                    # writeSecretNumberRule(p4info_helper,ingress_sw=s2,src_ip_addr=ip_index*256,port=port_index*16,key=new_key)
+                    # print("[update-cookie]")
+                    # print("Update new authentication rule on s2 **.**.*%s.**:**%s*") % (ip_index,port_index)
 
             # timeout notification
             elif digests.WhichOneof("update") == "idle_timeout_notification":
-                print ("[table-entry timeout]")
                 notification = digests.idle_timeout_notification
                 for entry in notification.table_entry:
-                    srcIP = prettify(entry.match[0].exact.value)
-                    srcPort = int_value(entry.match[1].exact.value,16) 
-                    dstIP = prettify(entry.match[2].exact.value) 
-                    dstPort = int_value(entry.match[3].exact.value,16) 
-                    # delete pinhole
-                    deletePinholeRule(p4info_helper,ingress_sw=s2,src_ip_addr=srcIP,src_tcp_port=srcPort,
-                                    dst_ip_addr=dstIP,dst_tcp_port=dstPort)
+                    table_name = p4info_helper.get_tables_name(entry.table_id)
+                    if table_name == "BasicIngress.pinhole":
+                        print ("[pinhole-entry timeout]")
+                        srcIP = prettify(entry.match[0].exact.value)
+                        srcPort = int_value(entry.match[1].exact.value,16) 
+                        dstIP = prettify(entry.match[2].exact.value) 
+                        dstPort = int_value(entry.match[3].exact.value,16) 
+                        # delete pinhole
+                        deletePinholeRule(p4info_helper,ingress_sw=s2,src_ip_addr=srcIP,src_tcp_port=srcPort,
+                                        dst_ip_addr=dstIP,dst_tcp_port=dstPort)
+                    elif table_name == "BasicIngress.drop_blacklist":
+                        print ("[blacklist-entry timeout]")
+                        srcIP = prettify(entry.match[0].lpm.value)
+                        srcPort = int_value(entry.match[1].exact.value,16) 
+                        # delete black list
+                        deleteDropForwardRules(p4info_helper,ingress_sw=s2,src_ip_addr=srcIP,src_tcp_port=srcPORT)
 
     except KeyboardInterrupt:
         print (" Shutting down.")

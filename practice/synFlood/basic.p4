@@ -178,6 +178,7 @@ control BasicIngress(inout headers hdr,
             NoAction;
         }
         size = 1024;
+        support_timeout = true;
         default_action = NoAction();
     }
 
