@@ -57,6 +57,10 @@ for i in range(15):
 # 設定Server-side的Detection用Meter
 print("[+] Setting Meter Server Bandwidth...")
 cli_3 = cli[3]
+cli_3.set_meter_rate("my_meter", 15, "{}:1".format(0.000001*200), "{}:1".format(0.00000125*200))
+cli_3.set_meter_rate("my_meter", 6, "{}:1".format(0.000001*200), "{}:1".format(0.00000125*200))
+# cli_3.set_meter_rate("my_meter", 6, "{}:1".format(0.000001*200), "{}:1".format(0.1*200))
+exit(1)
 # 設為0.000005時是 40 kbits/sec, 200*0.000005時為最高 8 Mbits/sec
 # | green -4M+ yellow -8M+ red |
 Server_Bandwidth = 200
@@ -95,8 +99,8 @@ for i in range(0,5):
     print("==========  END  ===========")
 print(len(out_data))
 tmp = raw_input()
-cli_3.set_meter_rate("my_meter", 15, "{}:1".format(0.000001*Server_Bandwidth), "{}:1".format(0.0000025*Server_Bandwidth))
-cli_3.set_meter_rate("my_meter", 6, "{}:1".format(0.000001*Server_Bandwidth), "{}:1".format(0.0000025*Server_Bandwidth))
+# cli_3.set_meter_rate("my_meter", 15, "{}:1".format(0.000001*Server_Bandwidth), "{}:1".format(0.00000125*Server_Bandwidth))
+# cli_3.set_meter_rate("my_meter", 6, "{}:1".format(0.000001*Server_Bandwidth), "{}:1".format(0.0000025*Server_Bandwidth))
 # after attack do again
 for i in range(1,17):
     print("========== START ===========")
